@@ -32,6 +32,20 @@ def ssh_restart_docker() -> tuple[bool, str]:
     detail = result.stdout.decode().strip() or result.stderr.decode().strip()
     return ok, detail
 
+def ssh_rebuild_docker() -> tuple[bool, str]:
+    """SSH into TravelNet Pi and rebuild Docker containers."""
+    result = subprocess.run(
+        [
+            "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+            "cd ~/services/TravelNet/server && ./build.sh",
+        ],
+        capture_output=True,
+        timeout=60,
+    )
+    ok = result.returncode == 0
+    detail = result.stdout.decode().strip() or result.stderr.decode().strip()
+    return ok, detail
 
 def ssh_reboot_travelnet() -> tuple[bool, str]:
     """SSH into TravelNet Pi and reboot it."""
