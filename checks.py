@@ -2,6 +2,10 @@
 Health check functions. Each returns (bool, str) — (is_healthy, detail).
 """
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
 import subprocess
 import requests
 from config import (
@@ -36,7 +40,7 @@ def check_api() -> tuple[bool, str]:
     """Hit the TravelNet API health endpoint."""
     try:
         resp = requests.get(
-            f"{TRAVELNET_API_URL}/api/status",
+            f"{TRAVELNET_API_URL}/metadata/status",
             headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
             timeout=10,
             verify=False,  # TODO: add cert verification

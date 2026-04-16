@@ -25,7 +25,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("/var/log/watchdog.log"),
+        logging.FileHandler("/home/dan/watchdog/watchdog.log"),
     ],
 )
 log = logging.getLogger(__name__)
