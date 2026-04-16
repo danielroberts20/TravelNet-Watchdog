@@ -1,0 +1,17 @@
+[Unit]
+Description=TravelNet Watchdog
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dan
+WorkingDirectory=/home/dan/watchdog
+ExecStart=/home/dan/watchdog/.venv/bin/python watchdog.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
