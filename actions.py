@@ -52,14 +52,14 @@ def ssh_reboot_travelnet() -> tuple[bool, str]:
     """SSH into TravelNet Pi and reboot it."""
     result = subprocess.run(
         [
-            "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
             f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            "sudo reboot",
+            "bash /home/dan/services/TravelNet/server/scripts/graceful_reboot.sh watchdog",
         ],
         capture_output=True,
-        timeout=30,
+        timeout=60,
     )
-    # reboot closes the connection immediately, so non-zero exit is expected
     return True, "reboot command sent"
 
 
