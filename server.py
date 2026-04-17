@@ -7,9 +7,32 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 import threading
-from datetime import datetime, timezone
+import time
 
 PORT = 9001
+MAINTENANCE_MAX_SECONDS = 600
+
+# Shared state
+_maintenance_until: float = 0.0
+_lock = threading.Lock()
+
+
+def set_maintenance_mode():
+    global _maintenance_until
+    with _lock:
+        _maintenance_until = time.time() + MAINTENANCE_MAX_SECONDS
+
+
+def is_maintenance_mode() -> bool:
+    with _lock:
+        return time.time() < _maintenance_until
+
+
+def clear_maintenance_mode():
+    global _maintenance_until
+    with _lock:
+        _maintenance_until = 0.0
+
 
 def get_last_wol() -> str:
     try:
@@ -37,8 +60,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def do_POST(self):
+        if self.path == "/maintenance":
+            set_maintenance_mode()
+            body = json.dumps({"status": "ok", "maintenance_seconds": MAINTENANCE_MAX_SECONDS}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def log_message(self, format, *args):
-        pass  # suppress default stdout logging
+        pass
 
 
 def start_server():

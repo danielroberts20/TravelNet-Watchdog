@@ -4,11 +4,13 @@ Watchdog main loop.
 Monitors the TravelNet Pi and takes escalating recovery actions on failure.
 
 Escalation ladder:
-  1. 3 consecutive failures  → alert
-  2. 5 consecutive failures + internet up  → SSH docker restart
-  3. 10 consecutive failures + internet up  → SSH reboot
-  4. 15 consecutive failures + internet up  → Shelly power cycle
-  5. internet down  → alert only, no recovery actions
+  1. 3 consecutive failures               → alert
+  2. 5 failures + internet up             → Docker up via SSH
+  3. 7 failures + internet up             → Docker rebuild via SSH
+  4. 10 failures + internet up            → Pi reboot via SSH
+  5. 15 failures + internet up            → Shelly power cycle
+  6. internet down                        → alert only, no recovery actions
+  7. maintenance mode active              → suppress all recovery actions
 """
 
 import time
@@ -20,7 +22,7 @@ from checks import check_internet, check_tailscale_ping, check_api
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
 from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN
-from server import start_server
+from server import start_server, is_maintenance_mode, clear_maintenance_mode
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,9 +80,17 @@ def run():
         if travelnet_healthy:
             if consecutive_failures > 0:
                 log.info("TravelNet recovered.")
-                notify("✅ Watchdog", "TravelNet Pi is back online.")
+                notify("✅ TravelNet", "TravelNet Pi is back online.")
             consecutive_failures = 0
+            if is_maintenance_mode():
+                clear_maintenance_mode()
+                log.info("Maintenance mode cleared — TravelNet is back.")
         else:
+            if is_maintenance_mode():
+                log.info("Maintenance mode active — suppressing recovery actions.")
+                time.sleep(CHECK_INTERVAL_SECONDS)
+                continue
+                
             consecutive_failures += 1
             log.warning(f"TravelNet unhealthy — consecutive failures: {consecutive_failures}")
 
