@@ -13,12 +13,14 @@ Escalation ladder:
 
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
+import requests
 
 from checks import check_internet, check_tailscale_ping, check_api
-from actions import ssh_restart_docker, ssh_reboot_travelnet, shelly_power_cycle
+from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
-from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS
+from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN
+from server import start_server
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,27 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def push_heartbeat(internet_ok, tailscale_ok, api_ok, consecutive_failures):
+    try:
+        requests.post(
+            TRAVELNET_HEARTBEAT_URL,
+            json={
+                "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "internet_ok": internet_ok,
+                "tailscale_ok": tailscale_ok,
+                "api_ok": api_ok,
+                "consecutive_failures": consecutive_failures,
+            },
+            headers={"Authorization": f"Bearer {WATCHDOG_TOKEN}"},
+            timeout=10,
+            verify=False,
+        )
+    except Exception as e:
+        log.warning(f"Failed to push heartbeat: {e}")
+
+
 def run():
+    start_server()
     log.info("Watchdog starting.")
     notify("🐕 Watchdog", "Watchdog started.")
 
@@ -56,7 +78,7 @@ def run():
         if travelnet_healthy:
             if consecutive_failures > 0:
                 log.info("TravelNet recovered.")
-                notify("✅ TravelNet", "TravelNet Pi is back online.")
+                notify("✅ Watchdog", "TravelNet Pi is back online.")
             consecutive_failures = 0
         else:
             consecutive_failures += 1
@@ -66,25 +88,32 @@ def run():
 
             if consecutive_failures == 3:
                 log.warning("Threshold reached — alerting.")
-                notify("⚠️ TravelNet", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
+                notify("⚠️ Watchdog", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
 
             elif consecutive_failures == 5 and internet_ok and cooldown_elapsed:
-                log.warning("Attempting Docker restart via SSH.")
-                notify("🔄 TravelNet", "Attempting Docker restart.")
+                log.warning("Attempting Docker up via SSH.")
+                notify("🔄 Watchdog", "Attempting Docker up.")
                 ok, detail = ssh_restart_docker()
-                log.info(f"Docker restart: {ok} — {detail}")
+                log.info(f"Docker up: {ok} — {detail}")
+                last_recovery_at = now
+
+            elif consecutive_failures == 7 and internet_ok and cooldown_elapsed:
+                log.warning("Attempting Docker rebuild via SSH.")
+                notify("🔄 Watchdog", "Attempting Docker rebuild.")
+                ok, detail = ssh_rebuild_docker()
+                log.info(f"Docker rebuild: {ok} — {detail}")
                 last_recovery_at = now
 
             elif consecutive_failures == 10 and internet_ok and cooldown_elapsed:
                 log.warning("Attempting reboot via SSH.")
-                notify("🔄 TravelNet", "Attempting Pi reboot via SSH.")
+                notify("🔄 Watchdog", "Attempting Pi reboot via SSH.")
                 ok, detail = ssh_reboot_travelnet()
                 log.info(f"Reboot: {ok} — {detail}")
                 last_recovery_at = now
 
             elif consecutive_failures == 15 and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Shelly power cycle.")
-                notify("🔌 TravelNet", "Attempting power cycle via Shelly.")
+                notify("🔌 Watchdog", "Attempting power cycle via Shelly.")
                 ok, detail = shelly_power_cycle()
                 log.info(f"Power cycle: {ok} — {detail}")
                 last_recovery_at = now
@@ -92,6 +121,7 @@ def run():
             elif not internet_ok:
                 log.warning("Internet is down — skipping recovery actions.")
 
+        push_heartbeat(internet_ok, tailscale_ok, api_ok, consecutive_failures)
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 

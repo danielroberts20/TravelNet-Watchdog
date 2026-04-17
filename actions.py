@@ -6,6 +6,7 @@ import time
 import subprocess
 import requests
 from wakeonlan import send_magic_packet
+from datetime import datetime, timezone
 from config import (
     TRAVELNET_SSH_USER,
     TRAVELNET_TAILSCALE_HOST,
@@ -18,12 +19,12 @@ from config import (
 
 
 def ssh_restart_docker() -> tuple[bool, str]:
-    """SSH into TravelNet Pi and restart Docker containers."""
     result = subprocess.run(
         [
-            "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
             f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            "cd ~/services/TravelNet/server && docker compose restart",
+            "cd ~/services/TravelNet/server && docker compose up -d",
         ],
         capture_output=True,
         timeout=60,
@@ -36,12 +37,12 @@ def ssh_rebuild_docker() -> tuple[bool, str]:
     """SSH into TravelNet Pi and rebuild Docker containers."""
     result = subprocess.run(
         [
-            "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
             f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
             "cd ~/services/TravelNet/server && ./build.sh",
         ],
         capture_output=True,
-        timeout=60,
+        timeout=180,
     )
     ok = result.returncode == 0
     detail = result.stdout.decode().strip() or result.stderr.decode().strip()
@@ -51,7 +52,7 @@ def ssh_reboot_travelnet() -> tuple[bool, str]:
     """SSH into TravelNet Pi and reboot it."""
     result = subprocess.run(
         [
-            "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
             f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
             "sudo reboot",
         ],
@@ -78,21 +79,23 @@ def shelly_power_cycle() -> tuple[bool, str]:
 
 
 def wake_pc() -> tuple[bool, str]:
-    """Send WoL magic packet to the PC."""
+    """Send WoL magic packet to the PC and record timestamp."""
     try:
         send_magic_packet(PC_MAC)
+        with open("/tmp/last_wol_sent", "w") as f:
+            f.write(datetime.now(timezone.utc).isoformat())
         return True, f"magic packet sent to {PC_MAC}"
     except Exception as e:
         return False, str(e)
 
 
 def shutdown_pc() -> tuple[bool, str]:
-    """SSH into PC and shut it down."""
     result = subprocess.run(
         [
-            "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id","-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            "-p", "2222",
             f"{PC_SSH_USER}@{PC_TAILSCALE_HOST}",
-            "shutdown /s /t 0",  # Windows shutdown command
+            "docker ps -q | xargs -r docker stop; /mnt/c/Windows/System32/shutdown.exe /s /t 0",
         ],
         capture_output=True,
         timeout=30,
