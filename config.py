@@ -18,6 +18,8 @@ WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "")  # for health checks and notifi
 SHELLY_IP = os.getenv("SHELLY_IP", "192.168.0.XX")  # set after Shelly is configured
 SHELLY_POWER_OFF_DELAY = 15   # seconds between off and on during power cycle
 
+CERT_PATH = os.getenv("CERT_PATH", "")
+
 # --- PC (Wake-on-LAN) ---
 PC_MAC = os.getenv("PC_MAC", "XX:XX:XX:XX:XX:XX")
 PC_TAILSCALE_HOST = os.getenv("PC_TAILSCALE_HOST", "dan-pc.tail186ff8.ts.net")

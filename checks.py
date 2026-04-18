@@ -13,6 +13,7 @@ from config import (
     TRAVELNET_API_URL,
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
+    CERT_PATH,
 )
 
 
@@ -43,7 +44,7 @@ def check_api() -> tuple[bool, str]:
             f"{TRAVELNET_API_URL}/metadata/status",
             headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
             timeout=10,
-            verify=False,  # TODO: add cert verification
+            verify=CERT_PATH,
         )
         ok = resp.status_code == 200
         return ok, f"status {resp.status_code}"

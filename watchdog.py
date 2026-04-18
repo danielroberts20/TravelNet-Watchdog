@@ -21,7 +21,7 @@ import requests
 from checks import check_internet, check_tailscale_ping, check_api
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
-from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN
+from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN, CERT_PATH
 from server import start_server, is_maintenance_mode, clear_maintenance_mode
 from logging.handlers import RotatingFileHandler
 
@@ -53,7 +53,7 @@ def push_heartbeat(internet_ok, tailscale_ok, api_ok, consecutive_failures):
             },
             headers={"Authorization": f"Bearer {WATCHDOG_TOKEN}"},
             timeout=10,
-            verify=False,
+            verify=CERT_PATH,
         )
     except Exception as e:
         log.warning(f"Failed to push heartbeat: {e}")
