@@ -23,13 +23,18 @@ from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet
 from notify import notify
 from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN
 from server import start_server, is_maintenance_mode, clear_maintenance_mode
+from logging.handlers import RotatingFileHandler
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("/home/dan/watchdog/watchdog.log"),
+        RotatingFileHandler(
+            "/home/dan/watchdog/watchdog.log",
+            maxBytes=5 * 1024 * 1024,  # 5MB
+            backupCount=5,
+        ),
     ],
 )
 log = logging.getLogger(__name__)
