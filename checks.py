@@ -14,6 +14,7 @@ from config import (
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
     CERT_PATH,
+    SHELLY_IP,
 )
 
 
@@ -26,6 +27,23 @@ def check_internet() -> tuple[bool, str]:
     ok = result.returncode == 0
     return ok, "ok" if ok else "no response from 8.8.8.8"
 
+
+def check_shelly() -> tuple[bool, str]:
+    """Check if the Shelly plug is reachable via its local API."""
+    try:
+        resp = requests.post(
+            f"http://{SHELLY_IP}/rpc/Switch.GetStatus",
+            json={"id": 0},
+            timeout=5,
+        )
+        ok = resp.status_code == 200
+        return ok, "ok" if ok else f"status {resp.status_code}"
+    except requests.exceptions.ConnectionError:
+        return False, "unreachable"
+    except requests.exceptions.Timeout:
+        return False, "timed out"
+    except Exception as e:
+        return False, str(e)
 
 def check_tailscale_ping() -> tuple[bool, str]:
     """Ping TravelNet Pi via Tailscale to confirm it is reachable."""
