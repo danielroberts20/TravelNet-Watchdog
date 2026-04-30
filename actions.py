@@ -95,7 +95,7 @@ def shutdown_pc() -> tuple[bool, str]:
             "ssh", "-i", "/home/dan/.ssh/watchdog_id","-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
             "-p", "2222",
             f"{PC_SSH_USER}@{PC_TAILSCALE_HOST}",
-            "docker ps -q | xargs -r docker stop; /mnt/c/Windows/System32/shutdown.exe /s /t 0",
+            "docker ps -q | xargs -r docker stop; /mnt/c/Windows/System32/shutdown.exe /s /f /t 0",
         ],
         capture_output=True,
         timeout=30,
