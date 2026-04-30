@@ -32,6 +32,6 @@ INTERNET_CHECK_HOST = "8.8.8.8"
 PUSHCUT_WEBHOOK_URL = os.getenv("PUSHCUT_WEBHOOK_URL", "")
 
 # --- Monitoring intervals ---
-CHECK_INTERVAL_SECONDS = 60       # how often to run checks
+CHECK_INTERVAL_SECONDS = 58       # how often to run checks
 FAILURE_THRESHOLD = 3             # consecutive failures before acting
 RECOVERY_COOLDOWN_SECONDS = 300   # min time between recovery attempts
