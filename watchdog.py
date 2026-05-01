@@ -21,7 +21,7 @@ import requests
 from checks import check_internet, check_tailscale_ping, check_api, check_shelly, check_cloudflare
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
-from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN, CERT_PATH
+from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN, CERT_PATH, FAILURE_THRESHOLD_LADDER
 from server import start_server, is_maintenance_mode, clear_maintenance_mode
 from logging.handlers import RotatingFileHandler
 
@@ -84,13 +84,13 @@ def run():
             f"internet={internet_ok}({internet_detail}) "
             f"tailscale={tailscale_ok}({tailscale_detail}) "
             f"api={api_ok}({api_detail}) "
-            f"shelly={shelly_ok}({shelly_detail})"
-            f"cloudflare={cloudflare_ok}({cloudflare_detail})"
+            f"shelly={shelly_ok}({shelly_detail}) "
+            f"cloudflare={cloudflare_ok}({cloudflare_detail}) "
         )
 
         if not shelly_ok:
             shelly_failures += 1
-            if shelly_failures == 3:
+            if shelly_failures == FAILURE_THRESHOLD_LADDER[0]:
                 notify("⚠️ Watchdog", f"Shelly plug is not responding ({shelly_detail})")
         else:
             if shelly_failures > 0:
@@ -98,9 +98,11 @@ def run():
             shelly_failures = 0
         
         if not cloudflare_ok:
+            if is_maintenance_mode():
+                continue
             cloudflare_failures += 1
-            if cloudflare_failures == 3:
-                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({shelly_detail})\nMYou should manually fallback to Tailnet address.")
+            if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
+                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({shelly_detail}).\nYou should manually fallback to Tailnet address.")
         else:
             if cloudflare_failures > 0:
                 notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
@@ -125,32 +127,32 @@ def run():
 
             cooldown_elapsed = (now - last_recovery_at) > RECOVERY_COOLDOWN_SECONDS
 
-            if consecutive_failures == 3:
+            if consecutive_failures == FAILURE_THRESHOLD_LADDER[0]:
                 log.warning("Threshold reached — alerting.")
                 notify("⚠️ Watchdog", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
 
-            elif consecutive_failures == 5 and internet_ok and cooldown_elapsed:
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker up via SSH.")
                 notify("🔄 Watchdog", "Attempting Docker up.")
                 ok, detail = ssh_restart_docker()
                 log.info(f"Docker up: {ok} — {detail}")
                 last_recovery_at = now
 
-            elif consecutive_failures == 7 and internet_ok and cooldown_elapsed:
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[2] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker rebuild via SSH.")
                 notify("🔄 Watchdog", "Attempting Docker rebuild.")
                 ok, detail = ssh_rebuild_docker()
                 log.info(f"Docker rebuild: {ok} — {detail}")
                 last_recovery_at = now
 
-            elif consecutive_failures == 10 and internet_ok and cooldown_elapsed:
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[3] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting reboot via SSH.")
                 notify("🔄 Watchdog", "Attempting Pi reboot via SSH.")
                 ok, detail = ssh_reboot_travelnet()
                 log.info(f"Reboot: {ok} — {detail}")
                 last_recovery_at = now
 
-            elif consecutive_failures == 15 and internet_ok and cooldown_elapsed:
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[4] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Shelly power cycle.")
                 notify("🔌 Watchdog", "Attempting power cycle via Shelly.")
                 ok, detail = shelly_power_cycle()
