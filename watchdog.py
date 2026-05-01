@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, UTC
 import requests
 
-from checks import check_internet, check_tailscale_ping, check_api, check_shelly
+from checks import check_internet, check_tailscale_ping, check_api, check_shelly, check_cloudflare
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
 from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN, CERT_PATH
@@ -67,6 +67,7 @@ def run():
     consecutive_failures = 0
     last_recovery_at = 0.0
     shelly_failures = 0
+    cloudflare_failures = 0
 
     while True:
         now = time.time()
@@ -75,14 +76,16 @@ def run():
         tailscale_ok, tailscale_detail = check_tailscale_ping()
         api_ok, api_detail = check_api()
         shelly_ok, shelly_detail = check_shelly()
+        cloudflare_ok, cloudflare_detail = check_cloudflare()
 
-        travelnet_healthy = tailscale_ok and api_ok
+        travelnet_healthy = tailscale_ok and api_ok and cloudflare_ok
 
         log.info(
             f"internet={internet_ok}({internet_detail}) "
             f"tailscale={tailscale_ok}({tailscale_detail}) "
             f"api={api_ok}({api_detail}) "
             f"shelly={shelly_ok}({shelly_detail})"
+            f"cloudflare={cloudflare_ok}({cloudflare_detail})"
         )
 
         if not shelly_ok:
@@ -93,6 +96,15 @@ def run():
             if shelly_failures > 0:
                 notify("✅ Watchdog", "Shelly plug is back online.")
             shelly_failures = 0
+        
+        if not cloudflare_ok:
+            cloudflare_failures += 1
+            if cloudflare_failures == 3:
+                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({shelly_detail})\nMYou should manually fallback to Tailnet address.")
+        else:
+            if cloudflare_failures > 0:
+                notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
+            cloudflare_failures = 0
 
         if travelnet_healthy:
             if consecutive_failures > 0:

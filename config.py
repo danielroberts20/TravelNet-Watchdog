@@ -4,12 +4,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- TravelNet Pi ---
-TRAVELNET_TAILSCALE_HOST = os.getenv("TRAVELNET_TAILSCALE_HOST", "pi-server.tail186ff8.ts.net")
+TRAVELNET_TAILSCALE_HOST = os.getenv("TRAVELNET_TAILSCALE_HOST", "travelnet.tail186ff8.ts.net")
 TRAVELNET_HEARTBEAT_URL = os.getenv(
     "TRAVELNET_HEARTBEAT_URL",
     f"https://{TRAVELNET_TAILSCALE_HOST}/upload/watchdog/heartbeat"
 )
 TRAVELNET_API_URL = os.getenv("TRAVELNET_API_URL", f"https://{TRAVELNET_TAILSCALE_HOST}")
+TRAVELNET_API_URL_TAILSCALE = os.getenv("TRAVELNET_API_URL_TAILSCALE", f"http://{TRAVELNET_TAILSCALE_HOST}:8000")
 TRAVELNET_API_TOKEN = os.getenv("TRAVELNET_API_TOKEN", "")
 TRAVELNET_SSH_USER = os.getenv("TRAVELNET_SSH_USER", "dan")
 WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "")  # for health checks and notifications

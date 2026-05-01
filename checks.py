@@ -13,6 +13,7 @@ from config import (
     TRAVELNET_API_URL,
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
+    TRAVELNET_API_URL_TAILSCALE,
     CERT_PATH,
     SHELLY_IP,
 )
@@ -56,14 +57,33 @@ def check_tailscale_ping() -> tuple[bool, str]:
 
 
 def check_api() -> tuple[bool, str]:
-    """Hit the TravelNet API health endpoint."""
+    """Hit the TravelNet API health endpoint via the Tailnet name and port \
+    (travelnet:8000)"""
     try:
         resp = requests.get(
-            f"{TRAVELNET_API_URL}/metadata/status",
+            f"{TRAVELNET_API_URL_TAILSCALE}/metadata/status",
             headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
             timeout=10,
             verify=CERT_PATH,
         )
+        ok = resp.status_code == 200
+        return ok, f"status {resp.status_code}"
+    except requests.exceptions.ConnectionError:
+        return False, "connection refused"
+    except requests.exceptions.Timeout:
+        return False, "timed out"
+    except Exception as e:
+        return False, str(e)
+
+def check_cloudflare() -> tuple[bool, str]:
+    """Hit the TravelNet API health endpoint via the Cloudflare tunnel (api.travelnet.dev)"""
+    try:
+        resp = requests.get(
+                f"{TRAVELNET_API_URL}/metadata/status",
+                headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
+                timeout=10,
+                verify=CERT_PATH,
+            )
         ok = resp.status_code == 200
         return ok, f"status {resp.status_code}"
     except requests.exceptions.ConnectionError:
