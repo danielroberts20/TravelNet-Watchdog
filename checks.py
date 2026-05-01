@@ -61,7 +61,7 @@ def check_api() -> tuple[bool, str]:
     (travelnet:8000)"""
     try:
         resp = requests.get(
-            f"{TRAVELNET_API_URL_TAILSCALE}/metadata/status",
+            f"{TRAVELNET_API_URL_TAILSCALE}/metadata/watchdog",
             headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
             timeout=10,
             verify=CERT_PATH,
@@ -79,7 +79,7 @@ def check_cloudflare() -> tuple[bool, str]:
     """Hit the TravelNet API health endpoint via the Cloudflare tunnel (api.travelnet.dev)"""
     try:
         resp = requests.get(
-                f"{TRAVELNET_API_URL}/metadata/status",
+                f"{TRAVELNET_API_URL}/metadata/watchdog",
                 headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
                 timeout=10,
                 verify=CERT_PATH,
