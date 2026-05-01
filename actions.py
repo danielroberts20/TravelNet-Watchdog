@@ -49,18 +49,31 @@ def ssh_rebuild_docker() -> tuple[bool, str]:
     return ok, detail
 
 def ssh_reboot_travelnet() -> tuple[bool, str]:
-    """SSH into TravelNet Pi and reboot it."""
-    result = subprocess.run(
-        [
-            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
-            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            "bash /home/dan/services/TravelNet/server/scripts/graceful_reboot.sh watchdog",
-        ],
-        capture_output=True,
-        timeout=60,
-    )
-    return True, "reboot command sent"
+    try:
+        result = subprocess.run(
+            [
+                "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+                "-o", "ConnectTimeout=10",
+                "-o", "StrictHostKeyChecking=no",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                "bash /home/dan/services/TravelNet/server/scripts/graceful_reboot.sh watchdog",
+            ],
+            capture_output=True,
+            timeout=60,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            return True, "reboot command sent"
+
+        # Non-zero exit → something failed
+        return False, f"SSH failed (code {result.returncode}): {result.stderr.strip()}"
+
+    except subprocess.TimeoutExpired:
+        return False, "SSH command timed out"
+
+    except Exception as e:
+        return False, f"Unexpected error: {e}"
 
 
 def shelly_power_cycle() -> tuple[bool, str]:
