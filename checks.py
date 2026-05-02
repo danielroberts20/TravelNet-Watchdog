@@ -7,6 +7,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 import subprocess
+from datetime import datetime, UTC
 import requests
 from config import (
     INTERNET_CHECK_HOST,
@@ -14,6 +15,9 @@ from config import (
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
     TRAVELNET_API_URL_TAILSCALE,
+    PREFECT_API_URL,
+    TRAVELNET_SSH_USER,
+    PREFECT_WORKER_CONTAINER,
     CERT_PATH,
     SHELLY_IP,
 )
@@ -86,6 +90,82 @@ def check_cloudflare() -> tuple[bool, str]:
             )
         ok = resp.status_code == 200
         return ok, f"status {resp.status_code}"
+    except requests.exceptions.ConnectionError:
+        return False, "connection refused"
+    except requests.exceptions.Timeout:
+        return False, "timed out"
+    except Exception as e:
+        return False, str(e)
+
+
+def check_prefect_server() -> tuple[bool, str]:
+    """Check Prefect server is up via its health endpoint."""
+    try:
+        resp = requests.get(f"{PREFECT_API_URL}/health", timeout=10)
+        ok = resp.status_code == 200
+        return ok, "ok" if ok else f"status {resp.status_code}"
+    except requests.exceptions.ConnectionError:
+        return False, "connection refused"
+    except requests.exceptions.Timeout:
+        return False, "timed out"
+    except Exception as e:
+        return False, str(e)
+
+
+def check_prefect_serve() -> tuple[bool, str]:
+    """
+    Check the deployments.py serve() process is running inside the container.
+    With Prefect serve() there is no worker — deployments.py IS the scheduler.
+    If this process is dead, no scheduled flows will run.
+    """
+    result = subprocess.run(
+        [
+            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+            f"docker exec {PREFECT_WORKER_CONTAINER} "
+            "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q 'deployments' "
+            "&& echo ok || echo dead",
+        ],
+        capture_output=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return False, f"SSH failed: {result.stderr.decode().strip()}"
+    output = result.stdout.decode().strip()
+    return output == "ok", output
+
+
+def check_prefect_recent_flow() -> tuple[bool, str]:
+    """
+    Check at least one flow run completed or failed in the last 25 hours.
+    The daily_summary flow runs at 08:00 every day — silence beyond 25 hours
+    means the serve() process is not executing flows even if it is running.
+    """
+    from datetime import timedelta
+    cutoff = (datetime.now(UTC) - timedelta(hours=25)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    try:
+        resp = requests.post(
+            f"{PREFECT_API_URL}/flow_runs/filter",
+            json={
+                "flow_runs": {
+                    "state": {"type": {"any_": ["COMPLETED", "FAILED", "CRASHED"]}},
+                    "start_time": {"after_": cutoff},
+                },
+                "limit": 1,
+                "sort": "START_TIME_DESC",
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return False, f"flow_runs endpoint status {resp.status_code}"
+        runs = resp.json()
+        if not runs:
+            return False, "no completed/failed flow runs in the last 25 hours"
+        run = runs[0]
+        return True, f"last run: '{run.get('name')}' state={run.get('state_name')}"
     except requests.exceptions.ConnectionError:
         return False, "connection refused"
     except requests.exceptions.Timeout:
