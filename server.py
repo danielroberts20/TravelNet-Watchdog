@@ -8,6 +8,7 @@ import json
 import os
 import threading
 import time
+from log_mirror import MIRROR_LOG_DIR, MIRROR_CONTAINERS
 
 PORT = 9001
 MAINTENANCE_MAX_SECONDS = 600
@@ -56,6 +57,23 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(body)
+        elif self.path.startswith("/logs/"):
+            container = self.path[len("/logs/"):]
+            if container not in MIRROR_CONTAINERS:
+                self.send_response(404)
+                self.end_headers()
+                return
+            log_path = f"{MIRROR_LOG_DIR}/{container}.log"
+            try:
+                with open(log_path, "r") as f:
+                    body = f.read().encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(body)
+            except FileNotFoundError:
+                self.send_response(404)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()

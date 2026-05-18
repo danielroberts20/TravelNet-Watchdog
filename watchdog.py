@@ -30,9 +30,19 @@ from checks import (
     )
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
-from config import CHECK_INTERVAL_SECONDS, RECOVERY_COOLDOWN_SECONDS, TRAVELNET_HEARTBEAT_URL, WATCHDOG_TOKEN, CERT_PATH, FAILURE_THRESHOLD_LADDER, PREFECT_ALERT_THRESHOLD
+from config import (
+    CHECK_INTERVAL_SECONDS, 
+    RECOVERY_COOLDOWN_SECONDS, 
+    TRAVELNET_HEARTBEAT_URL, 
+    WATCHDOG_TOKEN, 
+    CERT_PATH, 
+    FAILURE_THRESHOLD_LADDER, 
+    PREFECT_ALERT_THRESHOLD, 
+    MIRROR_INTERVAL_CYCLES
+)
 from server import start_server, is_maintenance_mode, clear_maintenance_mode
 from logging.handlers import RotatingFileHandler
+from log_mirror import mirror_travelnet_logs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +89,7 @@ def run():
     shelly_failures = 0
     cloudflare_failures = 0
     prefect_failures = 0
+    cycle_count = 0
 
     while True:
         now = time.time()
@@ -214,6 +225,14 @@ def run():
 
             elif not internet_ok:
                 log.warning("Internet is down — skipping recovery actions.")
+
+        
+        cycle_count += 1
+        if cycle_count % MIRROR_INTERVAL_CYCLES == 0:
+            try:
+                mirror_travelnet_logs()
+            except Exception as e:
+                log.warning(f"Log mirror error: {e}")
 
         push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_healthy, consecutive_failures)
         time.sleep(CHECK_INTERVAL_SECONDS)

@@ -11,11 +11,16 @@ TRAVELNET_HEARTBEAT_URL = os.getenv(
 )
 TRAVELNET_API_URL = os.getenv("TRAVELNET_API_URL", f"https://{TRAVELNET_TAILSCALE_HOST}")
 TRAVELNET_API_URL_TAILSCALE = os.getenv("TRAVELNET_API_URL_TAILSCALE", f"http://{TRAVELNET_TAILSCALE_HOST}:8000")
+TRAVELNET_LAN_HOST = os.getenv("TRAVELNET_LAN_HOST", "")
 PREFECT_API_URL = os.getenv("PREFECT_API_URL", f"http://{TRAVELNET_TAILSCALE_HOST}:4200/api")
 PREFECT_WORKER_CONTAINER = os.getenv("PREFECT_WORKER_CONTAINER", "prefect-server")
 TRAVELNET_API_TOKEN = os.getenv("TRAVELNET_API_TOKEN", "")
 TRAVELNET_SSH_USER = os.getenv("TRAVELNET_SSH_USER", "dan")
 WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "")  # for health checks and notifications
+
+# --- Log mirroring ---
+MIRROR_INTERVAL_CYCLES = 5  # every ~5 minutes
+
 
 # --- Shelly Plug ---
 SHELLY_IP = os.getenv("SHELLY_IP", "192.168.0.XX")  # set after Shelly is configured
