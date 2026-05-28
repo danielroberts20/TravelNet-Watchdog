@@ -52,13 +52,21 @@ def check_shelly() -> tuple[bool, str]:
 
 def check_tailscale_ping() -> tuple[bool, str]:
     """Ping TravelNet Pi via Tailscale to confirm it is reachable."""
+    ok, detail = _do_tailscale_ping()
+    if not ok:
+        # Before reporting failure, attempt to self-heal the local tailscaled daemon
+        subprocess.run(["sudo", "systemctl", "restart", "tailscaled"], timeout=30, capture_output=True)
+        time.sleep(15)
+        ok, detail = _do_tailscale_ping()  # authoritative result
+    return ok, detail
+
+def _do_tailscale_ping() -> tuple[bool, str]:
     result = subprocess.run(
         ["ping", "-c", "2", "-W", "3", TRAVELNET_TAILSCALE_HOST],
         capture_output=True,
     )
     ok = result.returncode == 0
     return ok, "ok" if ok else f"no ping response from {TRAVELNET_TAILSCALE_HOST}"
-
 
 def check_api() -> tuple[bool, str]:
     """Hit the TravelNet API health endpoint via the Tailnet name and port \
