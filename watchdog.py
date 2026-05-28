@@ -40,7 +40,7 @@ from config import (
     PREFECT_ALERT_THRESHOLD, 
     MIRROR_INTERVAL_CYCLES
 )
-from server import start_server, is_maintenance_mode, clear_maintenance_mode
+from server import start_server, is_maintenance_mode, clear_maintenance_mode, _push_to_pico
 from logging.handlers import RotatingFileHandler
 from log_mirror import mirror_travelnet_logs
 
@@ -175,6 +175,7 @@ def run():
         if travelnet_healthy:
             if consecutive_failures > 0:
                 log.info("TravelNet recovered.")
+                _push_to_pico("recovered", "System recovered")
                 notify("✅ TravelNet", "TravelNet Pi is back online.")
             consecutive_failures = 0
             if is_maintenance_mode():
@@ -193,10 +194,12 @@ def run():
 
             if consecutive_failures == FAILURE_THRESHOLD_LADDER[0]:
                 log.warning("Threshold reached — alerting.")
+                _push_to_pico("alert", "API unreachable — Watchdog is monitoring")
                 notify("⚠️ Watchdog", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker up via SSH.")
+                _push_to_pico("docker_start", "Self-healing — restarting containers")
                 notify("🔄 Watchdog", "Attempting Docker up.")
                 ok, detail = ssh_restart_docker()
                 log.info(f"Docker up: {ok} — {detail}")
@@ -204,6 +207,7 @@ def run():
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[2] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker rebuild via SSH.")
+                _push_to_pico("docker_rebuild", "Containers failed — rebuilding (few mins)")
                 notify("🔄 Watchdog", "Attempting Docker rebuild.")
                 ok, detail = ssh_rebuild_docker()
                 log.info(f"Docker rebuild: {ok} — {detail}")
@@ -211,6 +215,7 @@ def run():
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[3] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting reboot via SSH.")
+                _push_to_pico("reboot", "Rebuild failed — rebooting the Pi")
                 notify("🔄 Watchdog", "Attempting Pi reboot via SSH.")
                 ok, detail = ssh_reboot_travelnet()
                 log.info(f"Reboot: {ok} — {detail}")
@@ -218,6 +223,7 @@ def run():
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[4] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Shelly power cycle.")
+                _push_to_pico("power_cycle", "Rebooting failed — power cycling the Pi")
                 notify("🔌 Watchdog", "Attempting power cycle via Shelly.")
                 ok, detail = shelly_power_cycle()
                 log.info(f"Power cycle: {ok} — {detail}")

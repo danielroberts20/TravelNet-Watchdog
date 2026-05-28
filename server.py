@@ -10,8 +10,26 @@ import threading
 import time
 from log_mirror import MIRROR_LOG_DIR, MIRROR_CONTAINERS
 
+import socket as _socket
+import json as _json
+
+PICO_IP       = "192.168.0.73"
+PICO_UDP_PORT = 9002
+
 PORT = 9001
 MAINTENANCE_MAX_SECONDS = 600
+
+
+def _push_to_pico(step: str, text: str, msg_type: str = "watchdog") -> None:
+    """Fire-and-forget UDP push to the Pico display. Never raises."""
+    try:
+        payload = _json.dumps({"type": msg_type, "step": step, "text": text}).encode()
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        sock.sendto(payload, (PICO_IP, PICO_UDP_PORT))
+        sock.close()
+    except Exception as e:
+        logger.warning(f"Pico push failed (non-fatal): {e}")
+
 
 # Shared state
 _maintenance_until: float = 0.0
