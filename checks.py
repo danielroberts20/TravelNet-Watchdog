@@ -91,7 +91,7 @@ def check_cloudflare() -> tuple[bool, str]:
     """Hit the TravelNet API health endpoint via the Cloudflare tunnel (api.travelnet.dev)"""
     try:
         resp = requests.get(
-                f"{TRAVELNET_API_URL}/metadata/watchdog",
+                f"{TRAVELNET_API_URL}/metadata/status",
                 headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
                 timeout=10,
                 verify=CERT_PATH,
