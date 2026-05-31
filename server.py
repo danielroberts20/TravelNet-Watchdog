@@ -92,6 +92,36 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self.send_response(404)
                 self.end_headers()
+        elif self.path.startswith("/logs/watchdog"):
+            try:
+                from urllib.parse import urlparse, parse_qs
+                query = parse_qs(urlparse(self.path).query)
+                lines = int(query.get("lines", ["200"])[0])
+                lines = max(1, min(lines, 1000))  # clamp 1–1000
+
+                log_path = os.path.join(os.path.dirname(__file__), "watchdog.log")
+
+                if not os.path.exists(log_path):
+                    result = {"lines": [], "total_lines": 0, "file": "watchdog.log", "error": "Log file not found"}
+                else:
+                    with open(log_path, "r", errors="replace") as f:
+                        all_lines = f.readlines()
+                    tail = [l.rstrip("\n") for l in all_lines[-lines:]]
+                    result = {"lines": tail, "total_lines": len(all_lines), "file": "watchdog.log"}
+
+                body = json.dumps(result).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                body = json.dumps({"error": str(e), "lines": []}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
         else:
             self.send_response(404)
             self.end_headers()
