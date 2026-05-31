@@ -76,38 +76,82 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif self.path.startswith("/logs/"):
-            container = self.path[len("/logs/"):]
-            if container not in MIRROR_CONTAINERS:
-                self.send_response(404)
-                self.end_headers()
-                return
-            log_path = f"{MIRROR_LOG_DIR}/{container}.log"
-            try:
-                with open(log_path, "r") as f:
-                    body = f.read().encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(body)
-            except FileNotFoundError:
-                self.send_response(404)
-                self.end_headers()
-        elif self.path.startswith("/logs/watchdog"):
-            try:
-                from urllib.parse import urlparse, parse_qs
-                query = parse_qs(urlparse(self.path).query)
-                lines = int(query.get("lines", ["200"])[0])
-                lines = max(1, min(lines, 1000))  # clamp 1–1000
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(self.path)
+            container = parsed.path[len("/logs/"):]
 
+            if container == "watchdog":
+                try:
+                    query = parse_qs(parsed.query)
+                    lines = int(query.get("lines", ["200"])[0])
+                    lines = max(1, min(lines, 1000))
+
+                    log_path = os.path.join(os.path.dirname(__file__), "watchdog.log")
+
+                    if not os.path.exists(log_path):
+                        result = {"lines": [], "total_lines": 0, "file": "watchdog.log", "error": "Log file not found"}
+                    else:
+                        with open(log_path, "r", errors="replace") as f:
+                            all_lines = f.readlines()
+                        tail = [l.rstrip("\n") for l in all_lines[-lines:]]
+                        result = {"lines": tail, "total_lines": len(all_lines), "file": "watchdog.log"}
+
+                    body = json.dumps(result).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except Exception as e:
+                    body = json.dumps({"error": str(e), "lines": []}).encode("utf-8")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+            elif container not in MIRROR_CONTAINERS:
+                self.send_response(404)
+                self.end_headers()
+
+            else:
+                log_path = f"{MIRROR_LOG_DIR}/{container}.log"
+                try:
+                    with open(log_path, "r") as f:
+                        body = f.read().encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(body)
+                except FileNotFoundError:
+                    self.send_response(404)
+                    self.end_headers()
+        elif self.path == "/status":
+            import re
+            try:
                 log_path = os.path.join(os.path.dirname(__file__), "watchdog.log")
+                last_status_line = None
 
-                if not os.path.exists(log_path):
-                    result = {"lines": [], "total_lines": 0, "file": "watchdog.log", "error": "Log file not found"}
-                else:
+                if os.path.exists(log_path):
                     with open(log_path, "r", errors="replace") as f:
-                        all_lines = f.readlines()
-                    tail = [l.rstrip("\n") for l in all_lines[-lines:]]
-                    result = {"lines": tail, "total_lines": len(all_lines), "file": "watchdog.log"}
+                        for line in f:
+                            if "internet=" in line and "tailscale=" in line:
+                                last_status_line = line.strip()
+
+                if last_status_line is None:
+                    result = {"error": "No status line found", "checks": {}}
+                else:
+                    # Parse: "2026-05-31 12:48:25,951 | INFO| internet=True(ok) ..."
+                    parts = last_status_line.split("|", 2)
+                    timestamp = parts[0].strip() if parts else ""
+                    payload = parts[2].strip() if len(parts) > 2 else last_status_line
+
+                    checks = {}
+                    for match in re.finditer(r'(\w+)=(True|False)\(([^)]*)\)', payload):
+                        key, ok_str, detail = match.group(1), match.group(2), match.group(3)
+                        checks[key] = {"ok": ok_str == "True", "detail": detail}
+
+                    result = {"timestamp": timestamp, "checks": checks}
 
                 body = json.dumps(result).encode("utf-8")
                 self.send_response(200)
@@ -116,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as e:
-                body = json.dumps({"error": str(e), "lines": []}).encode("utf-8")
+                body = json.dumps({"error": str(e), "checks": {}}).encode("utf-8")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
