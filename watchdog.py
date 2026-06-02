@@ -193,7 +193,7 @@ def run():
             if consecutive_failures > 0 and notified_watchdog:
                 log.info("TravelNet recovered.")
                 _push_to_pico("recovered", "System recovered")
-                notify("✅ TravelNet", "TravelNet Pi is back online.")
+                notify("✅ TravelNet", "TravelNet is back online.")
                 notified_watchdog = False
                 notified_final = False
             consecutive_failures = 0
@@ -214,7 +214,7 @@ def run():
             if consecutive_failures == FAILURE_THRESHOLD_LADDER[0]:
                 log.warning("Threshold reached — alerting.")
                 _push_to_pico("alert", "API unreachable — Watchdog is monitoring")
-                notify("⚠️ Watchdog", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
+                notify("⚠️ Watchdog", f"TravelNet is not responding. ({consecutive_failures} failures)")
                 notified_watchdog = True
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
@@ -236,7 +236,7 @@ def run():
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[3] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting reboot via SSH.")
                 _push_to_pico("reboot", "Rebuild failed — rebooting the Pi")
-                notify("🔄 Watchdog", "Attempting Pi reboot via SSH.")
+                notify("🔄 Watchdog", "Attempting reboot via SSH.")
                 ok, detail = ssh_reboot_travelnet()
                 log.info(f"Reboot: {ok} — {detail}")
                 last_recovery_at = now
