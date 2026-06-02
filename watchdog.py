@@ -180,7 +180,7 @@ def run():
                 continue
             cloudflare_failures += 1
             if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
-                if consecutive_failures < FAILURE_THRESHOLD_LADDER[0]:
+                if travelnet_healthy:
                     notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
                     notified_cloudflare = True
         else:
