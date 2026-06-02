@@ -9,8 +9,10 @@ Escalation ladder:
   3. 7 failures + internet up             → Docker rebuild via SSH
   4. 10 failures + internet up            → Pi reboot via SSH
   5. 15 failures + internet up            → Shelly power cycle
-  6. internet down                        → alert only, no recovery actions
-  7. maintenance mode active              → suppress all recovery actions
+  6. 25 failures + internet up            → second Shelly power cycle
+  7. 35 failures                          → final alert, go silent
+  8. internet down                        → alert only, no recovery actions
+  9. maintenance mode active              → suppress all recovery actions
 """
 
 import time
@@ -61,6 +63,7 @@ notified_prefect = False
 notified_watchdog = False
 notified_shelly = False
 notified_cloudflare = False
+notified_final = False
 
 def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_failures):
     try:
@@ -83,6 +86,7 @@ def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_fa
 
 
 def run():
+    global notified_prefect, notified_watchdog, notified_shelly, notified_cloudflare, notified_final
     start_server()
     log.info("Watchdog starting.")
     notify("🐕 Watchdog", "Watchdog started.")
@@ -189,6 +193,7 @@ def run():
                 _push_to_pico("recovered", "System recovered")
                 notify("✅ TravelNet", "TravelNet Pi is back online.")
                 notified_watchdog = False
+                notified_final = False
             consecutive_failures = 0
             if is_maintenance_mode():
                 clear_maintenance_mode()
@@ -241,6 +246,19 @@ def run():
                 ok, detail = shelly_power_cycle()
                 log.info(f"Power cycle: {ok} — {detail}")
                 last_recovery_at = now
+
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[5] and internet_ok and cooldown_elapsed:
+                log.warning("Attempting second Shelly power cycle.")
+                _push_to_pico("power_cycle_2", "Second power cycle — still unresponsive")
+                notify("🔌 Watchdog", "Power cycle attempt 2 — TravelNet still unresponsive.")
+                ok, detail = shelly_power_cycle()
+                log.info(f"Power cycle 2: {ok} — {detail}")
+                last_recovery_at = now
+
+            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[6] and not notified_final:
+                log.warning("TravelNet unresponsive after two power cycles — sending final alert.")
+                notify("🆘 Watchdog", "TravelNet is unresponsive after two power cycles. Manual intervention required. Watchdog will continue monitoring silently.")
+                notified_final = True
 
             elif not internet_ok:
                 log.warning("Internet is down — skipping recovery actions.")
