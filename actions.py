@@ -19,34 +19,44 @@ from config import (
 
 
 def ssh_restart_docker() -> tuple[bool, str]:
-    result = subprocess.run(
-        [
-            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
-            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            "cd ~/services/TravelNet/server && docker compose up -d",
-        ],
-        capture_output=True,
-        timeout=60,
-    )
-    ok = result.returncode == 0
-    detail = result.stdout.decode().strip() or result.stderr.decode().strip()
-    return ok, detail
+    try:
+        result = subprocess.run(
+            [
+                "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+                "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                "cd ~/services/TravelNet/server && docker compose up -d",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        ok = result.returncode == 0
+        detail = result.stdout.decode().strip() or result.stderr.decode().strip()
+        return ok, detail
+    except subprocess.TimeoutExpired:
+        return False, "SSH command timed out"
+    except Exception as e:
+        return False, f"Unexpected error: {e}"
 
 def ssh_rebuild_docker() -> tuple[bool, str]:
     """SSH into TravelNet Pi and rebuild Docker containers."""
-    result = subprocess.run(
-        [
-            "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            "cd ~/services/TravelNet/server && ./build.sh",
-        ],
-        capture_output=True,
-        timeout=180,
-    )
-    ok = result.returncode == 0
-    detail = result.stdout.decode().strip() or result.stderr.decode().strip()
-    return ok, detail
+    try:
+        result = subprocess.run(
+            [
+                "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                "cd ~/services/TravelNet/server && ./build.sh",
+            ],
+            capture_output=True,
+            timeout=180,
+        )
+        ok = result.returncode == 0
+        detail = result.stdout.decode().strip() or result.stderr.decode().strip()
+        return ok, detail
+    except subprocess.TimeoutExpired:
+        return False, "SSH command timed out"
+    except Exception as e:
+        return False, f"Unexpected error: {e}"
 
 def ssh_reboot_travelnet() -> tuple[bool, str]:
     try:

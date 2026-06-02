@@ -56,7 +56,10 @@ def check_tailscale_ping() -> tuple[bool, str]:
     ok, detail = _do_tailscale_ping()
     if not ok:
         # Before reporting failure, attempt to self-heal the local tailscaled daemon
-        subprocess.run(["sudo", "systemctl", "restart", "tailscaled"], timeout=30, capture_output=True)
+        try:
+            subprocess.run(["sudo", "systemctl", "restart", "tailscaled"], timeout=30, capture_output=True)
+        except subprocess.TimeoutExpired:
+            pass
         time.sleep(15)
         ok, detail = _do_tailscale_ping()  # authoritative result
     return ok, detail
@@ -127,18 +130,21 @@ def check_prefect_serve() -> tuple[bool, str]:
     With Prefect serve() there is no worker — deployments.py IS the scheduler.
     If this process is dead, no scheduled flows will run.
     """
-    result = subprocess.run(
-        [
-            "ssh", "-i", "/home/dan/.ssh/watchdog_id",
-            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-            f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
-            f"docker exec {PREFECT_WORKER_CONTAINER} "
-            "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q 'deployments' "
-            "&& echo ok || echo dead",
-        ],
-        capture_output=True,
-        timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+                "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                f"docker exec {PREFECT_WORKER_CONTAINER} "
+                "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q 'deployments' "
+                "&& echo ok || echo dead",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "SSH command timed out"
     if result.returncode != 0:
         return False, f"SSH failed: {result.stderr.decode().strip()}"
     output = result.stdout.decode().strip()
