@@ -5,10 +5,13 @@ Runs in a background thread alongside the main monitoring loop.
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import logging
 import os
 import threading
 import time
 from log_mirror import MIRROR_LOG_DIR, MIRROR_CONTAINERS
+
+logger = logging.getLogger(__name__)
 
 import socket as _socket
 import json as _json
