@@ -57,7 +57,10 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
-
+notified_prefect = False
+notified_watchdog = False
+notified_shelly = False
+notified_cloudflare = False
 
 def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_failures):
     try:
@@ -119,7 +122,9 @@ def run():
 
         if prefect_healthy:
             if prefect_failures >= PREFECT_ALERT_THRESHOLD:
-                notify("✅ Prefect", "Prefect scheduler is healthy again.")
+                if notified_prefect:
+                    notify("✅ Prefect", "Prefect scheduler is healthy again.")
+                    notified_prefect = False
             prefect_failures = 0
         elif tailscale_ok:
             prefect_failures += 1
@@ -140,6 +145,7 @@ def run():
                     "⚠️ Prefect",
                     "Prefect scheduler is unhealthy.\n" + "\n".join(reasons)
                 )
+                notified_prefect = True
 
         travelnet_healthy = tailscale_ok and api_ok and cloudflare_ok
 
@@ -156,9 +162,11 @@ def run():
             shelly_failures += 1
             if shelly_failures == FAILURE_THRESHOLD_LADDER[0]:
                 notify("⚠️ Watchdog", f"Shelly plug is not responding ({shelly_detail})")
+                notified_shelly = True
         else:
-            if shelly_failures > 0:
+            if shelly_failures > 0 and notified_shelly:
                 notify("✅ Watchdog", "Shelly plug is back online.")
+                notified_shelly = False
             shelly_failures = 0
         
         if not cloudflare_ok:
@@ -167,16 +175,19 @@ def run():
             cloudflare_failures += 1
             if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
                 notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({shelly_detail}).\nYou should manually fallback to Tailnet address.")
+                notified_cloudflare = True
         else:
-            if cloudflare_failures > 0:
+            if cloudflare_failures > 0 and notified_cloudflare:
                 notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
+                notified_cloudflare = False
             cloudflare_failures = 0
 
         if travelnet_healthy:
-            if consecutive_failures > 0:
+            if consecutive_failures > 0 and notified_watchdog:
                 log.info("TravelNet recovered.")
                 _push_to_pico("recovered", "System recovered")
                 notify("✅ TravelNet", "TravelNet Pi is back online.")
+                notified_watchdog = False
             consecutive_failures = 0
             if is_maintenance_mode():
                 clear_maintenance_mode()
@@ -196,6 +207,7 @@ def run():
                 log.warning("Threshold reached — alerting.")
                 _push_to_pico("alert", "API unreachable — Watchdog is monitoring")
                 notify("⚠️ Watchdog", f"TravelNet Pi is not responding. ({consecutive_failures} failures)")
+                notified_watchdog = True
 
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker up via SSH.")
