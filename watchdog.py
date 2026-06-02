@@ -147,7 +147,7 @@ def run():
                 )
                 notified_prefect = True
 
-        travelnet_healthy = tailscale_ok and api_ok and cloudflare_ok
+        travelnet_healthy = tailscale_ok and api_ok
 
         log.info(
             f"internet={internet_ok}({internet_detail}) "
@@ -171,10 +171,11 @@ def run():
         
         if not cloudflare_ok:
             if is_maintenance_mode():
+                time.sleep(CHECK_INTERVAL_SECONDS)
                 continue
             cloudflare_failures += 1
             if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
-                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({shelly_detail}).\nYou should manually fallback to Tailnet address.")
+                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
                 notified_cloudflare = True
         else:
             if cloudflare_failures > 0 and notified_cloudflare:
