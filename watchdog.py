@@ -220,7 +220,7 @@ def run():
             elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
                 log.warning("Attempting Docker up via SSH.")
                 _push_to_pico("docker_start", "Self-healing — restarting containers")
-                notify("🔄 Watchdog", "Attempting Docker up.")
+                notify("🔄 Watchdog", "Attempting Docker restart.")
                 ok, detail = ssh_restart_docker()
                 log.info(f"Docker up: {ok} — {detail}")
                 last_recovery_at = now
