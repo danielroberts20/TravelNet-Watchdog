@@ -89,11 +89,11 @@ def ssh_reboot_travelnet() -> tuple[bool, str]:
 def shelly_power_cycle() -> tuple[bool, str]:
     """Cut power to TravelNet Pi via Shelly plug, then restore."""
     try:
-        off = requests.get(f"http://{SHELLY_IP}/relay/0?turn=off", timeout=5)
+        off = requests.post(f"http://{SHELLY_IP}/rpc/Switch.Set", json={"id": 0, "on": False}, timeout=5)
         if off.status_code != 200:
             return False, f"failed to turn off: {off.status_code}"
         time.sleep(SHELLY_POWER_OFF_DELAY)
-        on = requests.get(f"http://{SHELLY_IP}/relay/0?turn=on", timeout=5)
+        on = requests.post(f"http://{SHELLY_IP}/rpc/Switch.Set", json={"id": 0, "on": True}, timeout=5)
         if on.status_code != 200:
             return False, f"failed to turn on: {on.status_code}"
         return True, "power cycled successfully"
