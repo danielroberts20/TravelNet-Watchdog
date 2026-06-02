@@ -124,6 +124,8 @@ def run():
         #     f"prefect_flow={prefect_flow_ok}({prefect_flow_detail})"
         # )
 
+        travelnet_healthy = tailscale_ok and api_ok
+
         if prefect_healthy:
             if prefect_failures >= PREFECT_ALERT_THRESHOLD:
                 if notified_prefect:
@@ -138,20 +140,19 @@ def run():
                 f"flow={prefect_flow_ok}"
             )
             if prefect_failures == PREFECT_ALERT_THRESHOLD:
-                reasons = []
-                if not prefect_server_ok:
-                    reasons.append(f"server: {prefect_server_detail}")
-                if not prefect_serve_ok:
-                    reasons.append(f"serve process: {prefect_serve_detail}")
-                if not prefect_flow_ok:
-                    reasons.append(f"recent flows: {prefect_flow_detail}")
-                notify(
-                    "⚠️ Prefect",
-                    "Prefect scheduler is unhealthy.\n" + "\n".join(reasons)
-                )
-                notified_prefect = True
-
-        travelnet_healthy = tailscale_ok and api_ok
+                if travelnet_healthy:
+                    reasons = []
+                    if not prefect_server_ok:
+                        reasons.append(f"server: {prefect_server_detail}")
+                    if not prefect_serve_ok:
+                        reasons.append(f"serve process: {prefect_serve_detail}")
+                    if not prefect_flow_ok:
+                        reasons.append(f"recent flows: {prefect_flow_detail}")
+                    notify(
+                        "⚠️ Prefect",
+                        "Prefect scheduler is unhealthy.\n" + "\n".join(reasons)
+                    )
+                    notified_prefect = True
 
         log.info(
             f"internet={internet_ok}({internet_detail}) "
@@ -179,8 +180,9 @@ def run():
                 continue
             cloudflare_failures += 1
             if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
-                notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
-                notified_cloudflare = True
+                if consecutive_failures < FAILURE_THRESHOLD_LADDER[0]:
+                    notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
+                    notified_cloudflare = True
         else:
             if cloudflare_failures > 0 and notified_cloudflare:
                 notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
