@@ -15,6 +15,7 @@ from config import (
     TRAVELNET_API_URL,
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
+    TRAVELNET_LAN_HOST,
     TRAVELNET_API_URL_TAILSCALE,
     PREFECT_API_URL,
     TRAVELNET_SSH_USER,
@@ -108,6 +109,47 @@ def check_cloudflare() -> tuple[bool, str]:
         return False, "timed out"
     except Exception as e:
         return False, str(e)
+
+
+def check_ssh() -> tuple[bool, bool, str]:
+    """
+    Check SSH reachability of the TravelNet Pi.
+    Tries Tailscale first, then falls back to LAN IP.
+    Returns (tailscale_ok, lan_ok, detail).
+    """
+    ssh_cmd = [
+        "ssh", "-i", "/home/dan/.ssh/watchdog_id",
+        "-o", "ConnectTimeout=5",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "BatchMode=yes",
+    ]
+    try:
+        result = subprocess.run(
+            ssh_cmd + [f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}", "echo ok"],
+            capture_output=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.decode().strip() == "ok":
+            return True, False, "tailscale ok"
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception as e:
+        pass
+
+    try:
+        result = subprocess.run(
+            ssh_cmd + [f"{TRAVELNET_SSH_USER}@{TRAVELNET_LAN_HOST}", "echo ok"],
+            capture_output=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.decode().strip() == "ok":
+            return False, True, "tailscale failed, lan ok"
+    except subprocess.TimeoutExpired:
+        return False, False, "both failed"
+    except Exception as e:
+        return False, False, str(e)
+
+    return False, False, "both failed"
 
 
 def check_prefect_server() -> tuple[bool, str]:

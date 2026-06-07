@@ -5,6 +5,7 @@ load_dotenv()
 
 # --- TravelNet Pi ---
 TRAVELNET_TAILSCALE_HOST = os.getenv("TRAVELNET_TAILSCALE_HOST", "travelnet.tail186ff8.ts.net")
+TRAVELNET_LAN_HOST = os.getenv("TRAVELNET_LAN_HOST")
 TRAVELNET_HEARTBEAT_URL = os.getenv(
     "TRAVELNET_HEARTBEAT_URL",
     f"https://{TRAVELNET_TAILSCALE_HOST}/upload/watchdog/heartbeat"

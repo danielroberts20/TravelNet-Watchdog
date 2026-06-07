@@ -21,11 +21,12 @@ from datetime import datetime, UTC
 import requests
 
 from checks import (
-    check_internet, 
-    check_tailscale_ping, 
-    check_api, 
-    check_shelly, 
+    check_internet,
+    check_tailscale_ping,
+    check_api,
+    check_shelly,
     check_cloudflare,
+    check_ssh,
     check_prefect_server,
     check_prefect_serve,
     check_prefect_recent_flow,
@@ -63,9 +64,10 @@ notified_prefect = False
 notified_watchdog = False
 notified_shelly = False
 notified_cloudflare = False
+notified_ssh = False
 notified_final = False
 
-def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_failures):
+def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, ssh_ok, consecutive_failures):
     try:
         requests.post(
             TRAVELNET_HEARTBEAT_URL,
@@ -75,6 +77,7 @@ def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_fa
                 "tailscale_ok": tailscale_ok,
                 "api_ok": api_ok,
                 "prefect_ok": prefect_ok,
+                "ssh_ok": ssh_ok,
                 "consecutive_failures": consecutive_failures,
             },
             headers={"Authorization": f"Bearer {WATCHDOG_TOKEN}"},
@@ -86,7 +89,7 @@ def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, consecutive_fa
 
 
 def run():
-    global notified_prefect, notified_watchdog, notified_shelly, notified_cloudflare, notified_final
+    global notified_prefect, notified_watchdog, notified_shelly, notified_cloudflare, notified_ssh, notified_final
     start_server()
     log.info("Watchdog starting.")
     notify("🐕 Watchdog", "Watchdog started.")
@@ -95,6 +98,7 @@ def run():
     last_recovery_at = 0.0
     shelly_failures = 0
     cloudflare_failures = 0
+    ssh_failures = 0
     prefect_failures = 0
     cycle_count = 0
 
@@ -106,6 +110,8 @@ def run():
         api_ok, api_detail = check_api()
         shelly_ok, shelly_detail = check_shelly()
         cloudflare_ok, cloudflare_detail = check_cloudflare()
+        ssh_tailscale_ok, ssh_lan_ok, ssh_detail = check_ssh()
+        ssh_ok = ssh_tailscale_ok or ssh_lan_ok
 
         # Prefect checks — only if Tailscale is up
         if tailscale_ok:
@@ -160,6 +166,7 @@ def run():
             f"api={api_ok}({api_detail}) "
             f"shelly={shelly_ok}({shelly_detail}) "
             f"cloudflare={cloudflare_ok}({cloudflare_detail}) "
+            f"ssh={ssh_ok}({ssh_detail}) "
             f"prefect={prefect_healthy}({prefect_flow_detail}) "
         )
 
@@ -188,6 +195,17 @@ def run():
                 notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
                 notified_cloudflare = False
             cloudflare_failures = 0
+
+        if not ssh_ok:
+            ssh_failures += 1
+            if ssh_failures == FAILURE_THRESHOLD_LADDER[0]:
+                _push_to_pico("ssh_alert", "SSH unreachable — Pi may be severely down")
+                notified_ssh = True
+        else:
+            if ssh_failures > 0 and notified_ssh:
+                _push_to_pico("ssh_recovered", "SSH reachable again")
+                notified_ssh = False
+            ssh_failures = 0
 
         if travelnet_healthy:
             if consecutive_failures > 0 and notified_watchdog:
@@ -273,7 +291,7 @@ def run():
             except Exception as e:
                 log.warning(f"Log mirror error: {e}")
 
-        push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_healthy, consecutive_failures)
+        push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_healthy, ssh_ok, consecutive_failures)
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 
