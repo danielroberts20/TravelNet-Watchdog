@@ -34,6 +34,17 @@ def _push_to_pico(step: str, text: str, msg_type: str = "watchdog") -> None:
         logger.warning(f"Pico push failed (non-fatal): {e}")
 
 
+def _push_maintenance_to_pico(active: bool) -> None:
+    """Fire-and-forget UDP push to notify the Pico of maintenance mode changes."""
+    try:
+        payload = _json.dumps({"type": "maintenance", "active": active}).encode()
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        sock.sendto(payload, (PICO_IP, PICO_UDP_PORT))
+        sock.close()
+    except Exception as e:
+        logger.warning(f"Pico maintenance push failed (non-fatal): {e}")
+
+
 # Shared state
 _maintenance_until: float = 0.0
 _lock = threading.Lock()
@@ -43,6 +54,7 @@ def set_maintenance_mode():
     global _maintenance_until
     with _lock:
         _maintenance_until = time.time() + MAINTENANCE_MAX_SECONDS
+    _push_maintenance_to_pico(True)
 
 
 def is_maintenance_mode() -> bool:
@@ -54,6 +66,7 @@ def clear_maintenance_mode():
     global _maintenance_until
     with _lock:
         _maintenance_until = 0.0
+    _push_maintenance_to_pico(False)
 
 
 def get_last_wol() -> str:
