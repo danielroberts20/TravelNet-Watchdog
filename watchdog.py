@@ -43,7 +43,14 @@ from config import (
     PREFECT_ALERT_THRESHOLD, 
     MIRROR_INTERVAL_CYCLES
 )
-from server import start_server, is_maintenance_mode, clear_maintenance_mode, _push_to_pico, is_maintenance_forced
+from server import (
+    start_server,
+    is_maintenance_mode,
+    clear_maintenance_mode,
+    _push_to_pico,
+    _push_maintenance_to_pico,
+    is_maintenance_forced
+)
 from logging.handlers import RotatingFileHandler
 from log_mirror import mirror_travelnet_logs
 
@@ -66,6 +73,7 @@ notified_shelly = False
 notified_cloudflare = False
 notified_ssh = False
 notified_final = False
+notified_maintenance = False
 
 def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, ssh_ok, consecutive_failures):
     try:
@@ -89,7 +97,7 @@ def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, ssh_ok, consec
 
 
 def run():
-    global notified_prefect, notified_watchdog, notified_shelly, notified_cloudflare, notified_ssh, notified_final
+    global notified_prefect, notified_watchdog, notified_shelly, notified_cloudflare, notified_ssh, notified_final, notified_maintenance
     start_server()
     log.info("Watchdog starting.")
     notify("🐕 Watchdog", "Watchdog started.")
@@ -105,6 +113,7 @@ def run():
     while True:
         now = time.time()
 
+        # --- Run all checks ---
         internet_ok, internet_detail = check_internet()
         tailscale_ok, tailscale_detail = check_tailscale_ping()
         api_ok, api_detail = check_api()
@@ -123,15 +132,19 @@ def run():
             prefect_server_detail = prefect_serve_detail = prefect_flow_detail = "tailscale down"
 
         prefect_healthy = prefect_server_ok and prefect_serve_ok and prefect_flow_ok
-
-        # log.info(
-        #     f"prefect_server={prefect_server_ok}({prefect_server_detail}) "
-        #     f"prefect_serve={prefect_serve_ok}({prefect_serve_detail}) "
-        #     f"prefect_flow={prefect_flow_ok}({prefect_flow_detail})"
-        # )
-
         travelnet_healthy = tailscale_ok and api_ok
 
+        log.info(
+            f"internet={internet_ok}({internet_detail}) "
+            f"tailscale={tailscale_ok}({tailscale_detail}) "
+            f"api={api_ok}({api_detail}) "
+            f"shelly={shelly_ok}({shelly_detail}) "
+            f"cloudflare={cloudflare_ok}({cloudflare_detail}) "
+            f"ssh={ssh_ok}({ssh_detail}) "
+            f"prefect={prefect_healthy}({prefect_flow_detail}) "
+        )
+
+        # --- Secondary monitor: Prefect ---
         if prefect_healthy:
             if prefect_failures >= PREFECT_ALERT_THRESHOLD:
                 if notified_prefect:
@@ -160,16 +173,7 @@ def run():
                     )
                     notified_prefect = True
 
-        log.info(
-            f"internet={internet_ok}({internet_detail}) "
-            f"tailscale={tailscale_ok}({tailscale_detail}) "
-            f"api={api_ok}({api_detail}) "
-            f"shelly={shelly_ok}({shelly_detail}) "
-            f"cloudflare={cloudflare_ok}({cloudflare_detail}) "
-            f"ssh={ssh_ok}({ssh_detail}) "
-            f"prefect={prefect_healthy}({prefect_flow_detail}) "
-        )
-
+        # --- Secondary monitor: Shelly ---
         if not shelly_ok:
             shelly_failures += 1
             if shelly_failures == FAILURE_THRESHOLD_LADDER[0]:
@@ -180,22 +184,23 @@ def run():
                 notify("✅ Watchdog", "Shelly plug is back online.")
                 notified_shelly = False
             shelly_failures = 0
-        
+
+        # --- Secondary monitor: Cloudflare ---
+        # Suppress counter and alert when maintenance mode is active.
         if not cloudflare_ok:
-            if is_maintenance_mode():
-                time.sleep(CHECK_INTERVAL_SECONDS)
-                continue
-            cloudflare_failures += 1
-            if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
-                if travelnet_healthy:
-                    notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
-                    notified_cloudflare = True
+            if not is_maintenance_mode():
+                cloudflare_failures += 1
+                if cloudflare_failures == FAILURE_THRESHOLD_LADDER[0]:
+                    if travelnet_healthy:
+                        notify("⚠️ Watchdog", f"Cloudflare Tunnel unresponsive ({cloudflare_detail}).\nYou should manually fallback to Tailnet address.")
+                        notified_cloudflare = True
         else:
             if cloudflare_failures > 0 and notified_cloudflare:
                 notify("✅ Watchdog", "Cloudflare Tunnel is back online.")
                 notified_cloudflare = False
             cloudflare_failures = 0
 
+        # --- Secondary monitor: SSH ---
         if not ssh_ok:
             ssh_failures += 1
             if ssh_failures == FAILURE_THRESHOLD_LADDER[0]:
@@ -207,7 +212,16 @@ def run():
                 notified_ssh = False
             ssh_failures = 0
 
+        # --- Primary: TravelNet health ---
         if travelnet_healthy:
+            if is_maintenance_mode() and not notified_maintenance:
+                log.info("Maintenance mode active — TravelNet is healthy.")
+                _push_maintenance_to_pico(True)
+                notified_maintenance = True
+            elif not is_maintenance_mode() and notified_maintenance:
+                _push_maintenance_to_pico(False)
+                notified_maintenance = False
+
             if consecutive_failures > 0 and notified_watchdog:
                 log.info("TravelNet recovered.")
                 _push_to_pico("recovered", "System recovered")
@@ -218,72 +232,83 @@ def run():
             if is_maintenance_mode() and not is_maintenance_forced():
                 clear_maintenance_mode()
                 log.info("Maintenance mode cleared — TravelNet is back.")
+                _push_maintenance_to_pico(False)
+                notified_maintenance = False
         else:
+            if not is_maintenance_mode():
+                _push_maintenance_to_pico(False)
+                notified_maintenance = False
+
             if is_maintenance_mode():
-                log.info("Maintenance mode active — suppressing recovery actions.")
-                time.sleep(CHECK_INTERVAL_SECONDS)
-                continue
-                
-            consecutive_failures += 1
-            log.warning(f"TravelNet unhealthy — consecutive failures: {consecutive_failures}")
+                log.info(
+                    f"Maintenance mode active — suppressing recovery. "
+                    f"consecutive_failures={consecutive_failures} "
+                    f"internet={internet_ok} tailscale={tailscale_ok} api={api_ok}"
+                )
+                if not notified_maintenance:
+                    _push_maintenance_to_pico(True)
+                    notified_maintenance = True
+            else:
+                consecutive_failures += 1
+                log.warning(f"TravelNet unhealthy — consecutive failures: {consecutive_failures}")
 
-            cooldown_elapsed = (now - last_recovery_at) > RECOVERY_COOLDOWN_SECONDS
+                cooldown_elapsed = (now - last_recovery_at) > RECOVERY_COOLDOWN_SECONDS
 
-            if consecutive_failures == FAILURE_THRESHOLD_LADDER[0]:
-                log.warning("Threshold reached — alerting.")
-                _push_to_pico("alert", "API unreachable — Watchdog is monitoring")
-                notify("⚠️ Watchdog", f"TravelNet is not responding. ({consecutive_failures} failures)")
-                notified_watchdog = True
+                if consecutive_failures == FAILURE_THRESHOLD_LADDER[0]:
+                    log.warning("Threshold reached — alerting.")
+                    _push_to_pico("alert", "API unreachable — Watchdog is monitoring")
+                    notify("⚠️ Watchdog", f"TravelNet is not responding. ({consecutive_failures} failures)")
+                    notified_watchdog = True
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
-                log.warning("Attempting Docker up via SSH.")
-                _push_to_pico("docker_start", "Self-healing — restarting containers")
-                notify("🔄 Watchdog", "Attempting Docker restart.")
-                ok, detail = ssh_restart_docker()
-                log.info(f"Docker up: {ok} — {detail}")
-                last_recovery_at = now
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[1] and internet_ok and cooldown_elapsed:
+                    log.warning("Attempting Docker up via SSH.")
+                    _push_to_pico("docker_start", "Self-healing — restarting containers")
+                    notify("🔄 Watchdog", "Attempting Docker restart.")
+                    ok, detail = ssh_restart_docker()
+                    log.info(f"Docker up: {ok} — {detail}")
+                    last_recovery_at = now
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[2] and internet_ok and cooldown_elapsed:
-                log.warning("Attempting Docker rebuild via SSH.")
-                _push_to_pico("docker_rebuild", "Containers failed — rebuilding (few mins)")
-                notify("🔄 Watchdog", "Attempting Docker rebuild.")
-                ok, detail = ssh_rebuild_docker()
-                log.info(f"Docker rebuild: {ok} — {detail}")
-                last_recovery_at = now
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[2] and internet_ok and cooldown_elapsed:
+                    log.warning("Attempting Docker rebuild via SSH.")
+                    _push_to_pico("docker_rebuild", "Containers failed — rebuilding (few mins)")
+                    notify("🔄 Watchdog", "Attempting Docker rebuild.")
+                    ok, detail = ssh_rebuild_docker()
+                    log.info(f"Docker rebuild: {ok} — {detail}")
+                    last_recovery_at = now
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[3] and internet_ok and cooldown_elapsed:
-                log.warning("Attempting reboot via SSH.")
-                _push_to_pico("reboot", "Rebuild failed — rebooting the Pi")
-                notify("🔄 Watchdog", "Attempting reboot via SSH.")
-                ok, detail = ssh_reboot_travelnet()
-                log.info(f"Reboot: {ok} — {detail}")
-                last_recovery_at = now
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[3] and internet_ok and cooldown_elapsed:
+                    log.warning("Attempting reboot via SSH.")
+                    _push_to_pico("reboot", "Rebuild failed — rebooting the Pi")
+                    notify("🔄 Watchdog", "Attempting reboot via SSH.")
+                    ok, detail = ssh_reboot_travelnet()
+                    log.info(f"Reboot: {ok} — {detail}")
+                    last_recovery_at = now
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[4] and internet_ok and cooldown_elapsed:
-                log.warning("Attempting Shelly power cycle.")
-                _push_to_pico("power_cycle", "Rebooting failed — power cycling the Pi")
-                notify("🔌 Watchdog", "Attempting power cycle via Shelly.")
-                ok, detail = shelly_power_cycle()
-                log.info(f"Power cycle: {ok} — {detail}")
-                last_recovery_at = now
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[4] and internet_ok and cooldown_elapsed:
+                    log.warning("Attempting Shelly power cycle.")
+                    _push_to_pico("power_cycle", "Rebooting failed — power cycling the Pi")
+                    notify("🔌 Watchdog", "Attempting power cycle via Shelly.")
+                    ok, detail = shelly_power_cycle()
+                    log.info(f"Power cycle: {ok} — {detail}")
+                    last_recovery_at = now
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[5] and internet_ok and cooldown_elapsed:
-                log.warning("Attempting second Shelly power cycle.")
-                _push_to_pico("power_cycle_2", "Second power cycle — still unresponsive")
-                notify("🔌 Watchdog", "Power cycle attempt 2 — TravelNet still unresponsive.")
-                ok, detail = shelly_power_cycle()
-                log.info(f"Power cycle 2: {ok} — {detail}")
-                last_recovery_at = now
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[5] and internet_ok and cooldown_elapsed:
+                    log.warning("Attempting second Shelly power cycle.")
+                    _push_to_pico("power_cycle_2", "Second power cycle — still unresponsive")
+                    notify("🔌 Watchdog", "Power cycle attempt 2 — TravelNet still unresponsive.")
+                    ok, detail = shelly_power_cycle()
+                    log.info(f"Power cycle 2: {ok} — {detail}")
+                    last_recovery_at = now
 
-            elif consecutive_failures == FAILURE_THRESHOLD_LADDER[6] and not notified_final:
-                log.warning("TravelNet unresponsive after two power cycles — sending final alert.")
-                notify("🆘 Watchdog", "TravelNet is unresponsive after two power cycles. Manual intervention required. Watchdog will continue monitoring silently.")
-                notified_final = True
+                elif consecutive_failures == FAILURE_THRESHOLD_LADDER[6] and not notified_final:
+                    log.warning("TravelNet unresponsive after two power cycles — sending final alert.")
+                    notify("🆘 Watchdog", "TravelNet is unresponsive after two power cycles. Manual intervention required. Watchdog will continue monitoring silently.")
+                    notified_final = True
 
-            elif not internet_ok:
-                log.warning("Internet is down — skipping recovery actions.")
+                elif not internet_ok:
+                    log.warning("Internet is down — skipping recovery actions.")
 
-        
+        # --- Log mirror ---
         cycle_count += 1
         if cycle_count % MIRROR_INTERVAL_CYCLES == 0:
             try:
@@ -291,6 +316,7 @@ def run():
             except Exception as e:
                 log.warning(f"Log mirror error: {e}")
 
+        # --- Heartbeat and sleep (unconditional) ---
         push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_healthy, ssh_ok, consecutive_failures)
         time.sleep(CHECK_INTERVAL_SECONDS)
 

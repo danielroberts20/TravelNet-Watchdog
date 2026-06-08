@@ -59,6 +59,7 @@ def set_maintenance_mode(forced: bool = False):
     with _lock:
         _maintenance_until = time.time() + MAINTENANCE_MAX_SECONDS
         _maintenance_forced = forced
+    _push_maintenance_to_pico(True)
 
 def is_maintenance_forced() -> bool:
     with _lock:
@@ -69,6 +70,7 @@ def clear_maintenance_mode():
     with _lock:
         _maintenance_until = 0.0
         _maintenance_forced = False
+    _push_maintenance_to_pico(False)
 
 
 def get_last_wol() -> str:
@@ -197,6 +199,18 @@ class Handler(BaseHTTPRequestHandler):
                 "maintenance_seconds": MAINTENANCE_MAX_SECONDS,
                 "forced": forced
             }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_DELETE(self):
+        if self.path == "/maintenance":
+            clear_maintenance_mode()
+            body = json.dumps({"status": "ok", "cleared": True}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
