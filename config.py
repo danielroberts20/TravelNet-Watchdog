@@ -42,5 +42,5 @@ PUSHCUT_WEBHOOK_URL = os.getenv("PUSHCUT_WEBHOOK_URL", "")
 # --- Monitoring intervals ---
 CHECK_INTERVAL_SECONDS = 58       # how often to run checks
 FAILURE_THRESHOLD_LADDER = [3, 5, 7, 10, 15, 25, 35] # Escalation failures to trigger each new action
-RECOVERY_COOLDOWN_SECONDS = 30   # min time between recovery attempts
+RECOVERY_COOLDOWN_SECONDS = 300   # min time between recovery attempts
 PREFECT_ALERT_THRESHOLD = 3   # consecutive failures before alert
