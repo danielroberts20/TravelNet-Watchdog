@@ -50,6 +50,10 @@ _maintenance_until: float = 0.0
 _maintenance_forced: bool = False
 _lock = threading.Lock()
 
+def is_maintenance_mode() -> bool:
+    with _lock:
+        return time.time() < _maintenance_until
+
 def set_maintenance_mode(forced: bool = False):
     global _maintenance_until, _maintenance_forced
     with _lock:
