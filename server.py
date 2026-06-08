@@ -47,26 +47,24 @@ def _push_maintenance_to_pico(active: bool) -> None:
 
 # Shared state
 _maintenance_until: float = 0.0
+_maintenance_forced: bool = False
 _lock = threading.Lock()
 
-
-def set_maintenance_mode():
-    global _maintenance_until
+def set_maintenance_mode(forced: bool = False):
+    global _maintenance_until, _maintenance_forced
     with _lock:
         _maintenance_until = time.time() + MAINTENANCE_MAX_SECONDS
-    _push_maintenance_to_pico(True)
+        _maintenance_forced = forced
 
-
-def is_maintenance_mode() -> bool:
+def is_maintenance_forced() -> bool:
     with _lock:
-        return time.time() < _maintenance_until
-
+        return _maintenance_forced and time.time() < _maintenance_until
 
 def clear_maintenance_mode():
-    global _maintenance_until
+    global _maintenance_until, _maintenance_forced
     with _lock:
         _maintenance_until = 0.0
-    _push_maintenance_to_pico(False)
+        _maintenance_forced = False
 
 
 def get_last_wol() -> str:
@@ -187,9 +185,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path == "/maintenance":
-            set_maintenance_mode()
-            body = json.dumps({"status": "ok", "maintenance_seconds": MAINTENANCE_MAX_SECONDS}).encode()
+        if self.path in ("/maintenance", "/maintenance?force=1"):
+            forced = "force=1" in self.path
+            set_maintenance_mode(forced=forced)
+            body = json.dumps({
+                "status": "ok",
+                "maintenance_seconds": MAINTENANCE_MAX_SECONDS,
+                "forced": forced
+            }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()

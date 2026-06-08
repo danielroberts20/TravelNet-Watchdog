@@ -43,7 +43,7 @@ from config import (
     PREFECT_ALERT_THRESHOLD, 
     MIRROR_INTERVAL_CYCLES
 )
-from server import start_server, is_maintenance_mode, clear_maintenance_mode, _push_to_pico
+from server import start_server, is_maintenance_mode, clear_maintenance_mode, _push_to_pico, is_maintenance_forced
 from logging.handlers import RotatingFileHandler
 from log_mirror import mirror_travelnet_logs
 
@@ -215,7 +215,7 @@ def run():
                 notified_watchdog = False
                 notified_final = False
             consecutive_failures = 0
-            if is_maintenance_mode():
+            if is_maintenance_mode() and not is_maintenance_forced():
                 clear_maintenance_mode()
                 log.info("Maintenance mode cleared — TravelNet is back.")
         else:
