@@ -42,5 +42,15 @@ PUSHCUT_WEBHOOK_URL = os.getenv("PUSHCUT_WEBHOOK_URL", "")
 # --- Monitoring intervals ---
 CHECK_INTERVAL_SECONDS = 58       # how often to run checks
 FAILURE_THRESHOLD_LADDER = [3, 5, 7, 10, 15, 25, 35] # Escalation failures to trigger each new action
-RECOVERY_COOLDOWN_SECONDS = 300   # min time between recovery attempts
+RECOVERY_COOLDOWN_SECONDS = int(os.getenv("RECOVERY_COOLDOWN_SECONDS", "300"))   # min time between recovery attempts
+RECOVERY_THRESHOLD = int(os.getenv("RECOVERY_THRESHOLD", "2"))   # consecutive healthy cycles before recovery notification
 PREFECT_ALERT_THRESHOLD = 3   # consecutive failures before alert
+
+# --- Per-check confirmed-down thresholds ---
+INTERNET_FAIL_THRESHOLD  = int(os.getenv("INTERNET_FAIL_THRESHOLD",  "2"))
+TAILSCALE_FAIL_THRESHOLD = int(os.getenv("TAILSCALE_FAIL_THRESHOLD", "2"))
+API_FAIL_THRESHOLD       = int(os.getenv("API_FAIL_THRESHOLD",       "2"))
+SSH_FAIL_THRESHOLD       = int(os.getenv("SSH_FAIL_THRESHOLD",       "2"))
+CLOUDFLARE_FAIL_THRESHOLD = int(os.getenv("CLOUDFLARE_FAIL_THRESHOLD", "3"))
+SHELLY_FAIL_THRESHOLD    = int(os.getenv("SHELLY_FAIL_THRESHOLD",    "3"))
+PREFECT_FAIL_THRESHOLD   = int(os.getenv("PREFECT_FAIL_THRESHOLD",   "3"))

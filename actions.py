@@ -9,7 +9,7 @@ from wakeonlan import send_magic_packet
 from datetime import datetime, timezone
 from config import (
     TRAVELNET_SSH_USER,
-    TRAVELNET_TAILSCALE_HOST,
+    TRAVELNET_LAN_HOST,
     SHELLY_IP,
     SHELLY_POWER_OFF_DELAY,
     PC_MAC,
@@ -24,7 +24,7 @@ def ssh_restart_docker() -> tuple[bool, str]:
             [
                 "ssh", "-i", "/home/dan/.ssh/watchdog_id",
                 "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_LAN_HOST}",
                 "cd ~/services/TravelNet/server && docker compose up -d",
             ],
             capture_output=True,
@@ -44,7 +44,7 @@ def ssh_rebuild_docker() -> tuple[bool, str]:
         result = subprocess.run(
             [
                 "ssh", "-i", "/home/dan/.ssh/watchdog_id", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_LAN_HOST}",
                 "cd ~/services/TravelNet/server && ./build.sh",
             ],
             capture_output=True,
@@ -65,7 +65,7 @@ def ssh_reboot_travelnet() -> tuple[bool, str]:
                 "ssh", "-i", "/home/dan/.ssh/watchdog_id",
                 "-o", "ConnectTimeout=10",
                 "-o", "StrictHostKeyChecking=no",
-                f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}",
+                f"{TRAVELNET_SSH_USER}@{TRAVELNET_LAN_HOST}",
                 "bash /home/dan/services/TravelNet/server/scripts/graceful_reboot.sh watchdog",
             ],
             capture_output=True,

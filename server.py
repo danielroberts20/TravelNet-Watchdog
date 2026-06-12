@@ -55,16 +55,21 @@ _lock = threading.Lock()
 _state: dict = {
     "consecutive_failures": 0,
     "shelly_failures": 0,
+    "cloudflare_failures": 0,
+    "prefect_failures": 0,
     "last_recovery_at": 0.0,
     "internet_ok": None,
     "tailscale_ok": None,
     "api_ok": None,
     "shelly_ok": None,
+    "cloudflare_ok": None,
+    "prefect_healthy": None,
     "last_check_at": None,
     "internet_detail": "",
     "tailscale_detail": "",
     "api_detail": "",
     "shelly_detail": "",
+    "cloudflare_detail": "",
 }
 _last_action: dict = {
     "name": None,
@@ -273,20 +278,24 @@ function statusRefresh(){
 }
 
 function renderChecks(d){
-  var keys = ['internet','tailscale','api','shelly'];
-  var labels = {internet:'Internet',tailscale:'Tailscale',api:'API',shelly:'Shelly'};
+  var checks = [
+    {label:'Internet',   ok:d.internet_ok,     det:d.internet_detail||''},
+    {label:'Tailscale',  ok:d.tailscale_ok,    det:d.tailscale_detail||''},
+    {label:'API',        ok:d.api_ok,          det:d.api_detail||''},
+    {label:'Shelly',     ok:d.shelly_ok,       det:d.shelly_detail||''},
+    {label:'Cloudflare', ok:d.cloudflare_ok,   det:d.cloudflare_detail||''},
+    {label:'Prefect',    ok:d.prefect_healthy, det:d.prefect_failures>0?d.prefect_failures+' failures':''},
+  ];
   var html = '';
-  for(var i=0;i<keys.length;i++){
-    var k = keys[i];
-    var ok = d[k+'_ok'];
-    var det = d[k+'_detail'] || '';
+  for(var i=0;i<checks.length;i++){
+    var c = checks[i];
     var sym,cls;
-    if(ok===true){sym='&#10003;';cls='ok';}
-    else if(ok===false){sym='&#10007;';cls='fail';}
+    if(c.ok===true){sym='&#10003;';cls='ok';}
+    else if(c.ok===false){sym='&#10007;';cls='fail';}
     else{sym='?';cls='muted';}
     html += '<div class="check"><span class="sym '+cls+'">'+sym+'</span>'
-          + '<span class="lbl">'+labels[k]+'</span>';
-    if(det) html += '<span class="det">'+esc(det)+'</span>';
+          + '<span class="lbl">'+c.label+'</span>';
+    if(c.det) html += '<span class="det">'+esc(c.det)+'</span>';
     html += '</div>';
   }
   document.getElementById('checks').innerHTML = html;
