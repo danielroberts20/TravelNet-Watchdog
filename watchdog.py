@@ -49,7 +49,8 @@ from server import (
     clear_maintenance_mode,
     _push_to_pico,
     _push_maintenance_to_pico,
-    is_maintenance_forced
+    is_maintenance_forced,
+    update_watchdog_state,
 )
 from logging.handlers import RotatingFileHandler
 from log_mirror import mirror_travelnet_logs
@@ -318,6 +319,20 @@ def run():
 
         # --- Heartbeat and sleep (unconditional) ---
         push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_healthy, ssh_ok, consecutive_failures)
+        update_watchdog_state(
+            consecutive_failures=consecutive_failures,
+            shelly_failures=shelly_failures,
+            last_recovery_at=last_recovery_at,
+            internet_ok=internet_ok,
+            tailscale_ok=tailscale_ok,
+            api_ok=api_ok,
+            shelly_ok=shelly_ok,
+            last_check_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            internet_detail=internet_detail,
+            tailscale_detail=tailscale_detail,
+            api_detail=api_detail,
+            shelly_detail=shelly_detail,
+        )
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 
