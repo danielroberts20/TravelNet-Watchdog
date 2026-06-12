@@ -63,13 +63,14 @@ _state: dict = {
     "api_ok": None,
     "shelly_ok": None,
     "cloudflare_ok": None,
-    "prefect_healthy": None,
+    "prefect_ok": None,
     "last_check_at": None,
     "internet_detail": "",
     "tailscale_detail": "",
     "api_detail": "",
     "shelly_detail": "",
     "cloudflare_detail": "",
+    "prefect_detail": "",
 }
 _last_action: dict = {
     "name": None,
@@ -466,7 +467,17 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/status":
             try:
-                self._json_response(200, _get_status_snapshot())
+                snap = _get_status_snapshot()
+                snap["checks"] = {
+                    "internet":   {"ok": snap.get("internet_ok"),    "detail": snap.get("internet_detail", "")},
+                    "tailscale":  {"ok": snap.get("tailscale_ok"),   "detail": snap.get("tailscale_detail", "")},
+                    "api":        {"ok": snap.get("api_ok"),          "detail": snap.get("api_detail", "")},
+                    "shelly":     {"ok": snap.get("shelly_ok"),       "detail": snap.get("shelly_detail", "")},
+                    "cloudflare": {"ok": snap.get("cloudflare_ok"),  "detail": snap.get("cloudflare_detail", "")},
+                    "prefect":    {"ok": snap.get("prefect_ok"),      "detail": snap.get("prefect_detail", "")},
+                }
+                snap["timestamp"] = snap.get("last_check_at")
+                self._json_response(200, snap)
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
 
