@@ -111,12 +111,14 @@ def check_cloudflare() -> tuple[bool, str]:
         return False, str(e)
 
 
-def check_ssh() -> tuple[bool, bool | None, str]:
+def check_ssh() -> tuple[bool, bool, str]:
     """
-    Check SSH reachability of the TravelNet Pi.
-    Tries Tailscale first, then falls back to LAN IP.
-    Returns (tailscale_ok, lan_ok, detail). lan_ok is None when the LAN path
-    was never attempted (i.e. the Tailscale path already succeeded).
+    Check SSH reachability of the TravelNet Pi via both Tailscale and LAN.
+    Both paths are attempted every cycle so lan_ok always reflects a real
+    result rather than "not attempted". Tailscale remains the preferred path
+    for detail-message ordering and for anything downstream that reads
+    tailscale_ok first (e.g. ssh_ok = tailscale_ok or lan_ok).
+    Returns (tailscale_ok, lan_ok, detail).
     """
     ssh_cmd = [
         "ssh", "-i", "/home/dan/.ssh/watchdog_id",
@@ -124,33 +126,31 @@ def check_ssh() -> tuple[bool, bool | None, str]:
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
     ]
-    try:
-        result = subprocess.run(
-            ssh_cmd + [f"{TRAVELNET_SSH_USER}@{TRAVELNET_TAILSCALE_HOST}", "echo ok"],
-            capture_output=True,
-            timeout=15,
-        )
-        if result.returncode == 0 and result.stdout.decode().strip() == "ok":
-            return True, None, "tailscale ok"
-    except subprocess.TimeoutExpired:
-        pass
-    except Exception as e:
-        pass
 
-    try:
-        result = subprocess.run(
-            ssh_cmd + [f"{TRAVELNET_SSH_USER}@{TRAVELNET_LAN_HOST}", "echo ok"],
-            capture_output=True,
-            timeout=15,
-        )
-        if result.returncode == 0 and result.stdout.decode().strip() == "ok":
-            return False, True, "tailscale failed, lan ok"
-    except subprocess.TimeoutExpired:
-        return False, False, "both failed"
-    except Exception as e:
-        return False, False, str(e)
+    def _try(host: str) -> bool:
+        try:
+            result = subprocess.run(
+                ssh_cmd + [f"{TRAVELNET_SSH_USER}@{host}", "echo ok"],
+                capture_output=True,
+                timeout=15,
+            )
+            return result.returncode == 0 and result.stdout.decode().strip() == "ok"
+        except Exception:
+            return False
 
-    return False, False, "both failed"
+    tailscale_ok = _try(TRAVELNET_TAILSCALE_HOST)
+    lan_ok = _try(TRAVELNET_LAN_HOST)
+
+    if tailscale_ok and lan_ok:
+        detail = "tailscale ok, lan ok"
+    elif tailscale_ok:
+        detail = "tailscale ok, lan failed"
+    elif lan_ok:
+        detail = "tailscale failed, lan ok"
+    else:
+        detail = "both failed"
+
+    return tailscale_ok, lan_ok, detail
 
 
 def check_prefect_server() -> tuple[bool, str]:
