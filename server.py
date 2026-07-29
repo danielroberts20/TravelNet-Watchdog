@@ -74,6 +74,7 @@ _state: dict = {
     "cloudflare_detail": "",
     "prefect_detail": "",
     "ssh_detail": "",
+    "certs": [],
 }
 _last_action: dict = {
     "name": None,
@@ -225,6 +226,11 @@ pre{font-family:'Courier New',Courier,monospace;font-size:11px;line-height:1.5;b
   <div class="meta-row" id="meta-row"></div>
 </div>
 
+<div class="section" id="certs-section" style="display:none">
+  <h2>TLS Certs</h2>
+  <div id="certs-list"></div>
+</div>
+
 <div class="section">
   <h2>Maintenance Mode</h2>
   <div class="maint-status" id="maint-status"><span class="muted">Loading...</span></div>
@@ -289,6 +295,7 @@ function esc(s){
 function statusRefresh(){
   fetch('/status').then(function(r){return r.json();}).then(function(d){
     renderChecks(d);
+    renderCerts(d);
     renderMaintenance(d);
     renderLastAction(d);
     renderActionButtons(d);
@@ -334,6 +341,32 @@ function renderChecks(d){
   var lc = d.last_check_at ? new Date(d.last_check_at).toLocaleTimeString() : '—';
   document.getElementById('meta-row').textContent =
     'Consecutive failures: '+cf+' | Last check: '+lc;
+}
+
+function renderCerts(d){
+  var certs = d.certs || [];
+  var sec = document.getElementById('certs-section');
+  if(!sec) return;
+  if(certs.length===0){sec.style.display='none';return;}
+  sec.style.display='';
+  var clsMap = {ok:'ok',warn:'warn',critical:'fail',expired:'fail',missing:'muted',error:'muted'};
+  var symMap = {ok:'&#10003;',warn:'!',critical:'&#10007;',expired:'&#10007;',missing:'?',error:'?'};
+  var html = '<div class="checks">';
+  for(var i=0;i<certs.length;i++){
+    var c = certs[i];
+    var cls = clsMap[c.status]||'muted';
+    var sym = symMap[c.status]||'?';
+    var det = c.days_remaining!=null
+      ? c.days_remaining+'d (expires '+esc(c.expiry_date||'')+')'
+      : esc(c.status);
+    html += '<div class="check">'
+      +'<span class="sym '+cls+'">'+sym+'</span>'
+      +'<span class="lbl">'+esc(c.name)+'</span>'
+      +'<span class="det">'+det+'</span>'
+      +'</div>';
+  }
+  html += '</div>';
+  document.getElementById('certs-list').innerHTML = html;
 }
 
 function renderMaintenance(d){
