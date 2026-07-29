@@ -54,3 +54,11 @@ SSH_FAIL_THRESHOLD       = int(os.getenv("SSH_FAIL_THRESHOLD",       "2"))
 CLOUDFLARE_FAIL_THRESHOLD = int(os.getenv("CLOUDFLARE_FAIL_THRESHOLD", "3"))
 SHELLY_FAIL_THRESHOLD    = int(os.getenv("SHELLY_FAIL_THRESHOLD",    "3"))
 PREFECT_FAIL_THRESHOLD   = int(os.getenv("PREFECT_FAIL_THRESHOLD",   "3"))
+
+# --- TLS certificate expiry monitoring ---
+CERT_WARN_DAYS     = 21   # alert when fewer than this many days remain
+CERT_CRITICAL_DAYS = 7    # escalate to critical below this threshold
+CERT_CHECK_PATHS   = [    # (display_name, local_path_on_watchdog_pi)
+    ("travelnet.tail186ff8.ts.net", "/home/dan/watchdog/certs/travelnet.tail186ff8.ts.net.crt"),
+    ("api.travelnet.dev",           "/home/dan/watchdog/certs/api.travelnet.dev.crt"),
+]

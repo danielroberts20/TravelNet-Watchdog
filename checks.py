@@ -6,6 +6,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+import os
 import subprocess
 import time
 from datetime import datetime, UTC
@@ -22,6 +23,9 @@ from config import (
     PREFECT_WORKER_CONTAINER,
     CERT_PATH,
     SHELLY_IP,
+    CERT_CHECK_PATHS,
+    CERT_WARN_DAYS,
+    CERT_CRITICAL_DAYS,
 )
 
 
@@ -230,3 +234,61 @@ def check_prefect_recent_flow() -> tuple[bool, str]:
         return False, "timed out"
     except Exception as e:
         return False, str(e)
+
+
+def _parse_cert_expiry(path: str) -> tuple[int | None, str | None]:
+    """Parse a PEM cert and return (days_remaining, expiry_date_iso) or (None, None) on error."""
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-in", path, "-noout", "-enddate"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None, None
+        # output: "notAfter=Jul 29 14:42:54 2026 GMT"
+        date_str = result.stdout.strip().split("=", 1)[1].strip()
+        expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+        days = (expiry - datetime.now(UTC)).days
+        return days, expiry.strftime("%Y-%m-%d")
+    except Exception:
+        return None, None
+
+
+def _cert_status(days_remaining: int | None) -> str:
+    if days_remaining is None:
+        return "error"
+    if days_remaining <= 0:
+        return "expired"
+    if days_remaining <= CERT_CRITICAL_DAYS:
+        return "critical"
+    if days_remaining <= CERT_WARN_DAYS:
+        return "warn"
+    return "ok"
+
+
+def check_cert_expiry() -> list[dict]:
+    """
+    Read monitored TLS cert files from local disk copies synced by the TravelNet Pi's
+    scp cron. Returns one dict per cert:
+      name: str           — display name
+      path: str           — file path checked
+      days_remaining: int | None
+      expiry_date: str | None  — "YYYY-MM-DD"
+      status: "ok" | "warn" | "critical" | "expired" | "missing" | "error"
+    """
+    results = []
+    for name, path in CERT_CHECK_PATHS:
+        if not os.path.exists(path):
+            results.append({
+                "name": name, "path": path,
+                "days_remaining": None, "expiry_date": None,
+                "status": "missing",
+            })
+            continue
+        days, expiry_date = _parse_cert_expiry(path)
+        results.append({
+            "name": name, "path": path,
+            "days_remaining": days, "expiry_date": expiry_date,
+            "status": _cert_status(days),
+        })
+    return results
