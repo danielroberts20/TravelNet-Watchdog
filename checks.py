@@ -111,11 +111,12 @@ def check_cloudflare() -> tuple[bool, str]:
         return False, str(e)
 
 
-def check_ssh() -> tuple[bool, bool, str]:
+def check_ssh() -> tuple[bool, bool | None, str]:
     """
     Check SSH reachability of the TravelNet Pi.
     Tries Tailscale first, then falls back to LAN IP.
-    Returns (tailscale_ok, lan_ok, detail).
+    Returns (tailscale_ok, lan_ok, detail). lan_ok is None when the LAN path
+    was never attempted (i.e. the Tailscale path already succeeded).
     """
     ssh_cmd = [
         "ssh", "-i", "/home/dan/.ssh/watchdog_id",
@@ -130,7 +131,7 @@ def check_ssh() -> tuple[bool, bool, str]:
             timeout=15,
         )
         if result.returncode == 0 and result.stdout.decode().strip() == "ok":
-            return True, False, "tailscale ok"
+            return True, None, "tailscale ok"
     except subprocess.TimeoutExpired:
         pass
     except Exception as e:

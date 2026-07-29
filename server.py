@@ -321,12 +321,13 @@ function renderChecks(d){
   }
   document.getElementById('checks').innerHTML = html;
 
-  var total = checks.length;
-  var sumCls = healthy===total ? 'ok' : (failed>0 ? 'fail' : 'warn');
+  var total = healthy + failed;
+  var sumCls = total===0 ? 'muted' : (failed>0 ? 'fail' : 'ok');
+  var sumText = total===0 ? 'No data yet' : (healthy+'/'+total+' healthy');
   document.getElementById('checks-summary').className = 'checks-summary' + (_checksExpanded?' expanded':'');
   document.getElementById('checks-summary').innerHTML =
     '<span class="pill '+sumCls+'"></span>'
-    + '<span class="'+sumCls+'">'+healthy+'/'+total+' healthy</span>'
+    + '<span class="'+sumCls+'">'+sumText+'</span>'
     + '<span class="chev">&#9656;</span>';
 
   var cf = d.consecutive_failures||0;
