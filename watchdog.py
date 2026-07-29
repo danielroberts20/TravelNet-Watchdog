@@ -395,6 +395,8 @@ def run():
             prefect_ok=prefect_healthy,
             prefect_failures=prefect_failures,
             cloudflare_failures=cloudflare_failures,
+            ssh_tailscale_ok=ssh_tailscale_ok,
+            ssh_lan_ok=ssh_lan_ok,
             last_check_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             internet_detail=internet_detail,
             tailscale_detail=tailscale_detail,
@@ -402,6 +404,7 @@ def run():
             shelly_detail=shelly_detail,
             cloudflare_detail=cloudflare_detail,
             prefect_detail="",
+            ssh_detail=ssh_detail,
         )
         time.sleep(CHECK_INTERVAL_SECONDS)
 

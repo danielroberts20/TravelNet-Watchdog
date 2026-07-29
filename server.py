@@ -64,6 +64,8 @@ _state: dict = {
     "shelly_ok": None,
     "cloudflare_ok": None,
     "prefect_ok": None,
+    "ssh_tailscale_ok": None,
+    "ssh_lan_ok": None,
     "last_check_at": None,
     "internet_detail": "",
     "tailscale_detail": "",
@@ -71,6 +73,7 @@ _state: dict = {
     "shelly_detail": "",
     "cloudflare_detail": "",
     "prefect_detail": "",
+    "ssh_detail": "",
 }
 _last_action: dict = {
     "name": None,
@@ -180,7 +183,11 @@ h1{color:#e0e0e0;font-size:18px;margin-bottom:16px;letter-spacing:2px}
 .fail{color:#ff4444}
 .warn{color:#ffaa00}
 .muted{color:#555}
-.checks{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.checks{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:12px}
+.checks-summary{cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;user-select:none}
+.checks-summary .pill{width:9px;height:9px;border-radius:50%;background:currentColor}
+.checks-summary .chev{font-size:10px;color:#555;transition:transform .15s;margin-left:2px}
+.checks-summary.expanded .chev{transform:rotate(90deg)}
 .check{display:flex;align-items:baseline;gap:6px}
 .check .sym{font-size:16px}
 .check .lbl{color:#888;font-size:12px}
@@ -211,7 +218,10 @@ pre{font-family:'Courier New',Courier,monospace;font-size:11px;line-height:1.5;b
 
 <div class="section">
   <h2>Checks</h2>
-  <div class="checks" id="checks"><span class="muted">Loading...</span></div>
+  <div class="checks-summary" id="checks-summary" onclick="toggleChecksExpanded()">
+    <span class="muted">Loading...</span>
+  </div>
+  <div class="checks" id="checks" style="display:none"></div>
   <div class="meta-row" id="meta-row"></div>
 </div>
 
@@ -264,6 +274,13 @@ var _confirmTimers = {};
 var _logTimer = null;
 var _cntdwnTimer = null;
 var _cntdwnUntil = null;
+var _checksExpanded = false;
+
+function toggleChecksExpanded(){
+  _checksExpanded = !_checksExpanded;
+  document.getElementById('checks').style.display = _checksExpanded ? 'flex' : 'none';
+  document.getElementById('checks-summary').classList.toggle('expanded', _checksExpanded);
+}
 
 function esc(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -280,19 +297,22 @@ function statusRefresh(){
 
 function renderChecks(d){
   var checks = [
-    {label:'Internet',   ok:d.internet_ok,     det:d.internet_detail||''},
-    {label:'Tailscale',  ok:d.tailscale_ok,    det:d.tailscale_detail||''},
-    {label:'API',        ok:d.api_ok,          det:d.api_detail||''},
-    {label:'Shelly',     ok:d.shelly_ok,       det:d.shelly_detail||''},
-    {label:'Cloudflare', ok:d.cloudflare_ok,   det:d.cloudflare_detail||''},
-    {label:'Prefect',    ok:d.prefect_healthy, det:d.prefect_failures>0?d.prefect_failures+' failures':''},
+    {label:'Internet',        ok:d.internet_ok,      det:d.internet_detail||''},
+    {label:'Tailscale',       ok:d.tailscale_ok,     det:d.tailscale_detail||''},
+    {label:'API',             ok:d.api_ok,           det:d.api_detail||''},
+    {label:'Shelly',          ok:d.shelly_ok,        det:d.shelly_detail||''},
+    {label:'Cloudflare',      ok:d.cloudflare_ok,    det:d.cloudflare_detail||''},
+    {label:'Prefect',         ok:d.prefect_ok,       det:d.prefect_failures>0?d.prefect_failures+' failures':''},
+    {label:'SSH (Tailscale)', ok:d.ssh_tailscale_ok, det:d.ssh_detail||''},
+    {label:'SSH (LAN)',       ok:d.ssh_lan_ok,       det:d.ssh_detail||''},
   ];
   var html = '';
+  var healthy = 0, failed = 0;
   for(var i=0;i<checks.length;i++){
     var c = checks[i];
     var sym,cls;
-    if(c.ok===true){sym='&#10003;';cls='ok';}
-    else if(c.ok===false){sym='&#10007;';cls='fail';}
+    if(c.ok===true){sym='&#10003;';cls='ok';healthy++;}
+    else if(c.ok===false){sym='&#10007;';cls='fail';failed++;}
     else{sym='?';cls='muted';}
     html += '<div class="check"><span class="sym '+cls+'">'+sym+'</span>'
           + '<span class="lbl">'+c.label+'</span>';
@@ -300,6 +320,15 @@ function renderChecks(d){
     html += '</div>';
   }
   document.getElementById('checks').innerHTML = html;
+
+  var total = checks.length;
+  var sumCls = healthy===total ? 'ok' : (failed>0 ? 'fail' : 'warn');
+  document.getElementById('checks-summary').className = 'checks-summary' + (_checksExpanded?' expanded':'');
+  document.getElementById('checks-summary').innerHTML =
+    '<span class="pill '+sumCls+'"></span>'
+    + '<span class="'+sumCls+'">'+healthy+'/'+total+' healthy</span>'
+    + '<span class="chev">&#9656;</span>';
+
   var cf = d.consecutive_failures||0;
   var lc = d.last_check_at ? new Date(d.last_check_at).toLocaleTimeString() : '—';
   document.getElementById('meta-row').textContent =
@@ -475,6 +504,8 @@ class Handler(BaseHTTPRequestHandler):
                     "shelly":     {"ok": snap.get("shelly_ok"),       "detail": snap.get("shelly_detail", "")},
                     "cloudflare": {"ok": snap.get("cloudflare_ok"),  "detail": snap.get("cloudflare_detail", "")},
                     "prefect":    {"ok": snap.get("prefect_ok"),      "detail": snap.get("prefect_detail", "")},
+                    "ssh_tailscale": {"ok": snap.get("ssh_tailscale_ok"), "detail": snap.get("ssh_detail", "")},
+                    "ssh_lan":    {"ok": snap.get("ssh_lan_ok"),      "detail": snap.get("ssh_detail", "")},
                 }
                 snap["timestamp"] = snap.get("last_check_at")
                 self._json_response(200, snap)
