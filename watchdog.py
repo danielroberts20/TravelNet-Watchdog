@@ -72,6 +72,7 @@ from checks import (
     check_prefect_server,
     check_prefect_serve,
     check_prefect_recent_flow,
+    check_cert_expiry,
     )
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
@@ -122,6 +123,32 @@ notified_cloudflare = False
 notified_ssh = False
 notified_final = False
 notified_maintenance = False
+_cert_notified: dict = {}  # cert name → "warn"|"critical"|"expired"|"missing"|None
+
+
+def _handle_cert_alerts(cert_results: list) -> None:
+    """Fire Pushcut alerts on threshold crossings; dedup so each level fires once per cert."""
+    for cert in cert_results:
+        name   = cert["name"]
+        status = cert["status"]
+        days   = cert.get("days_remaining")
+        prev   = _cert_notified.get(name)
+
+        if status == "expired" and prev != "expired":
+            notify("🔴 TLS Cert Expired", f"{name} has expired — renew immediately.")
+            _cert_notified[name] = "expired"
+        elif status == "critical" and prev not in ("critical", "expired"):
+            notify("🔴 TLS Cert", f"{name} expires in {days} days — renew now.")
+            _cert_notified[name] = "critical"
+        elif status == "warn" and prev not in ("warn", "critical", "expired"):
+            notify("⚠️ TLS Cert", f"{name} expires in {days} days.")
+            _cert_notified[name] = "warn"
+        elif status == "missing" and prev != "missing":
+            notify("⚠️ TLS Cert", f"Cert file not found on Watchdog Pi: {cert['path']}")
+            _cert_notified[name] = "missing"
+        elif status == "ok" and prev is not None:
+            notify("✅ TLS Cert", f"{name} renewed — {days} days remaining.")
+            _cert_notified[name] = None
 
 def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, ssh_ok, consecutive_failures):
     try:
@@ -260,6 +287,16 @@ def run():
                 _push_to_pico("ssh_recovered", "SSH reachable again")
                 notified_ssh = False
             ssh_failures = 0
+
+        # --- Secondary monitor: TLS cert expiry ---
+        cert_results = check_cert_expiry()
+        _handle_cert_alerts(cert_results)
+        cert_summary = ", ".join(
+            f"{c['name']}={c['status']}({c['days_remaining']}d)" if c["days_remaining"] is not None
+            else f"{c['name']}={c['status']}"
+            for c in cert_results
+        )
+        log.info(f"certs: {cert_summary}")
 
         # --- Primary: TravelNet health ---
         if travelnet_healthy:
@@ -405,6 +442,7 @@ def run():
             cloudflare_detail=cloudflare_detail,
             prefect_detail="",
             ssh_detail=ssh_detail,
+            certs=cert_results,
         )
         time.sleep(CHECK_INTERVAL_SECONDS)
 
