@@ -21,7 +21,6 @@ from config import (
     PREFECT_API_URL,
     TRAVELNET_SSH_USER,
     PREFECT_WORKER_CONTAINER,
-    CERT_PATH,
     SHELLY_IP,
     CERT_CHECK_PATHS,
     CERT_WARN_DAYS,
@@ -77,6 +76,7 @@ def _do_tailscale_ping() -> tuple[bool, str]:
     ok = result.returncode == 0
     return ok, "ok" if ok else f"no ping response from {TRAVELNET_TAILSCALE_HOST}"
 
+
 def check_lan_ping() -> tuple[bool, str]:
     """Ping the TravelNet Pi's LAN IP to confirm it is reachable. This is the
     primary reachability signal feeding travelnet_healthy — check_tailscale_ping()
@@ -109,13 +109,18 @@ def check_api() -> tuple[bool, str]:
         return False, str(e)
 
 def check_cloudflare() -> tuple[bool, str]:
-    """Hit the TravelNet API health endpoint via the Cloudflare tunnel (api.travelnet.dev)"""
+    """Hit the TravelNet API health endpoint via the Cloudflare tunnel (api.travelnet.dev).
+    Uses standard chain-of-trust verification (verify=True), not CERT_PATH pinning —
+    this call goes through Cloudflare's edge, which presents its own managed cert
+    (not our origin's), so pinning to our own cert would fail on every healthy
+    check. This check is about confirming the public path is reachable at all,
+    which the public CA trust store is the right tool for."""
     try:
         resp = requests.get(
                 f"{TRAVELNET_API_URL}/metadata/status",
                 headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
                 timeout=10,
-                verify=CERT_PATH,
+                verify=True,
             )
         ok = resp.status_code == 200
         return ok, f"status {resp.status_code}"

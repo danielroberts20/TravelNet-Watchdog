@@ -6,11 +6,14 @@ load_dotenv()
 # --- TravelNet Pi ---
 TRAVELNET_TAILSCALE_HOST = os.getenv("TRAVELNET_TAILSCALE_HOST", "travelnet.tail186ff8.ts.net")
 TRAVELNET_LAN_HOST = os.getenv("TRAVELNET_LAN_HOST")
+# Heartbeat goes out over the LAN (see net.pin_host_to_ip in watchdog.py), but keeps
+# api.travelnet.dev as the hostname/SNI so nginx presents the Let's Encrypt cert that
+# CERT_PATH now verifies against — not the Tailscale-issued one.
 TRAVELNET_HEARTBEAT_URL = os.getenv(
     "TRAVELNET_HEARTBEAT_URL",
-    f"https://{TRAVELNET_TAILSCALE_HOST}/upload/watchdog/heartbeat"
+    "https://api.travelnet.dev/upload/watchdog/heartbeat"
 )
-TRAVELNET_API_URL = os.getenv("TRAVELNET_API_URL", f"https://{TRAVELNET_TAILSCALE_HOST}")
+TRAVELNET_API_URL = os.getenv("TRAVELNET_API_URL", "https://api.travelnet.dev")
 # Direct-to-container health probe (bypasses nginx entirely) — plain HTTP over the LAN.
 TRAVELNET_API_URL_LAN = os.getenv("TRAVELNET_API_URL_LAN", f"http://{TRAVELNET_LAN_HOST}:8000")
 PREFECT_API_URL = os.getenv("PREFECT_API_URL", f"http://{TRAVELNET_TAILSCALE_HOST}:4200/api")
@@ -27,7 +30,11 @@ MIRROR_INTERVAL_CYCLES = 5  # every ~5 minutes
 SHELLY_IP = os.getenv("SHELLY_IP", "192.168.0.XX")  # set after Shelly is configured
 SHELLY_POWER_OFF_DELAY = 15   # seconds between off and on during power cycle
 
-CERT_PATH = os.getenv("CERT_PATH", "")
+# Trust anchor for verify= calls against nginx (push_heartbeat, check_cloudflare).
+# Now the api.travelnet.dev Let's Encrypt cert (renewed via certbot, independent of
+# Tailscale) rather than the Tailscale-issued cert — see CERT_CHECK_PATHS below,
+# which already tracks a local copy at this same path.
+CERT_PATH = os.getenv("CERT_PATH", "/home/dan/watchdog/certs/api.travelnet.dev.crt")
 
 # --- PC (Wake-on-LAN) ---
 PC_MAC = os.getenv("PC_MAC", "XX:XX:XX:XX:XX:XX")
@@ -59,6 +66,5 @@ PREFECT_FAIL_THRESHOLD   = int(os.getenv("PREFECT_FAIL_THRESHOLD",   "3"))
 CERT_WARN_DAYS     = 21   # alert when fewer than this many days remain
 CERT_CRITICAL_DAYS = 7    # escalate to critical below this threshold
 CERT_CHECK_PATHS   = [    # (display_name, local_path_on_watchdog_pi)
-    ("travelnet.tail186ff8.ts.net", "/home/dan/watchdog/certs/travelnet.tail186ff8.ts.net.crt"),
-    ("api.travelnet.dev",           "/home/dan/watchdog/certs/api.travelnet.dev.crt"),
+    ("api.travelnet.dev", "/home/dan/watchdog/certs/api.travelnet.dev.crt"),
 ]

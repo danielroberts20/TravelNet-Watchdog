@@ -62,6 +62,7 @@ recovery actions are suppressed.
 import time
 import logging
 from datetime import datetime, UTC
+from urllib.parse import urlparse
 import requests
 
 from checks import (
@@ -79,11 +80,14 @@ from checks import (
     )
 from actions import ssh_restart_docker, ssh_rebuild_docker, ssh_reboot_travelnet, shelly_power_cycle
 from notify import notify
+from dns_pin import pin_host_to_ip
+from cert_pin import PinnedFingerprintAdapter, leaf_fingerprint_from_file
 from config import (
     CHECK_INTERVAL_SECONDS,
     RECOVERY_COOLDOWN_SECONDS,
     RECOVERY_THRESHOLD,
     TRAVELNET_HEARTBEAT_URL,
+    TRAVELNET_LAN_HOST,
     WATCHDOG_TOKEN,
     CERT_PATH,
     FAILURE_THRESHOLD_LADDER,
@@ -104,6 +108,8 @@ from server import (
 )
 from logging.handlers import RotatingFileHandler
 from log_mirror import mirror_travelnet_logs
+
+_HEARTBEAT_HOST = urlparse(TRAVELNET_HEARTBEAT_URL).hostname
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,21 +160,27 @@ def _handle_cert_alerts(cert_results: list) -> None:
 
 def push_heartbeat(internet_ok, tailscale_ok, api_ok, prefect_ok, ssh_ok, consecutive_failures):
     try:
-        requests.post(
-            TRAVELNET_HEARTBEAT_URL,
-            json={
-                "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "internet_ok": internet_ok,
-                "tailscale_ok": tailscale_ok,
-                "api_ok": api_ok,
-                "prefect_ok": prefect_ok,
-                "ssh_ok": ssh_ok,
-                "consecutive_failures": consecutive_failures,
-            },
-            headers={"Authorization": f"Bearer {WATCHDOG_TOKEN}"},
-            timeout=10,
-            verify=CERT_PATH,
-        )
+        # Re-read the fingerprint each call — CERT_PATH is refreshed monthly by the
+        # existing scp cron job, so this picks up renewals with no extra plumbing.
+        fingerprint = leaf_fingerprint_from_file(CERT_PATH)
+        session = requests.Session()
+        session.mount(f"https://{_HEARTBEAT_HOST}", PinnedFingerprintAdapter(fingerprint))
+        with pin_host_to_ip(_HEARTBEAT_HOST, TRAVELNET_LAN_HOST):
+            session.post(
+                TRAVELNET_HEARTBEAT_URL,
+                json={
+                    "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "internet_ok": internet_ok,
+                    "tailscale_ok": tailscale_ok,
+                    "api_ok": api_ok,
+                    "prefect_ok": prefect_ok,
+                    "ssh_ok": ssh_ok,
+                    "consecutive_failures": consecutive_failures,
+                },
+                headers={"Authorization": f"Bearer {WATCHDOG_TOKEN}"},
+                timeout=10,
+                verify=False,  # chain check skipped deliberately — assert_fingerprint pins instead
+            )
     except Exception as e:
         log.warning(f"Failed to push heartbeat: {e}")
 
