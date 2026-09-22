@@ -11,7 +11,8 @@ TRAVELNET_HEARTBEAT_URL = os.getenv(
     f"https://{TRAVELNET_TAILSCALE_HOST}/upload/watchdog/heartbeat"
 )
 TRAVELNET_API_URL = os.getenv("TRAVELNET_API_URL", f"https://{TRAVELNET_TAILSCALE_HOST}")
-TRAVELNET_API_URL_TAILSCALE = os.getenv("TRAVELNET_API_URL_TAILSCALE", f"http://{TRAVELNET_TAILSCALE_HOST}:8000")
+# Direct-to-container health probe (bypasses nginx entirely) — plain HTTP over the LAN.
+TRAVELNET_API_URL_LAN = os.getenv("TRAVELNET_API_URL_LAN", f"http://{TRAVELNET_LAN_HOST}:8000")
 PREFECT_API_URL = os.getenv("PREFECT_API_URL", f"http://{TRAVELNET_TAILSCALE_HOST}:4200/api")
 PREFECT_WORKER_CONTAINER = os.getenv("PREFECT_WORKER_CONTAINER", "prefect-server")
 TRAVELNET_API_TOKEN = os.getenv("TRAVELNET_API_TOKEN", "")
@@ -48,7 +49,6 @@ PREFECT_ALERT_THRESHOLD = 3   # consecutive failures before alert
 
 # --- Per-check confirmed-down thresholds ---
 INTERNET_FAIL_THRESHOLD  = int(os.getenv("INTERNET_FAIL_THRESHOLD",  "2"))
-TAILSCALE_FAIL_THRESHOLD = int(os.getenv("TAILSCALE_FAIL_THRESHOLD", "2"))
 API_FAIL_THRESHOLD       = int(os.getenv("API_FAIL_THRESHOLD",       "2"))
 SSH_FAIL_THRESHOLD       = int(os.getenv("SSH_FAIL_THRESHOLD",       "2"))
 CLOUDFLARE_FAIL_THRESHOLD = int(os.getenv("CLOUDFLARE_FAIL_THRESHOLD", "3"))

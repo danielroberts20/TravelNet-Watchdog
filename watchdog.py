@@ -14,36 +14,38 @@ At 3 consecutive failures the watchdog sends a Pushcut alert (once, no cooldown 
 
 Confirmed-down diagnosis
 ------------------------
-Each check has a per-check threshold (INTERNET/TAILSCALE/API/SSH_FAIL_THRESHOLD) that
-must be met before a subsystem is treated as "confirmed down". Confirmed-down flags are
+Each check has a per-check threshold (INTERNET/API/SSH_FAIL_THRESHOLD) that must be
+met before a subsystem is treated as "confirmed down". Confirmed-down flags are
 evaluated on every cycle where cooldown has elapsed:
 
-  internet_confirmed_down  — not internet_ok  AND consecutive_failures >= INTERNET_FAIL_THRESHOLD
-  tailscale_confirmed_down — not tailscale_ok AND consecutive_failures >= TAILSCALE_FAIL_THRESHOLD
-  api_confirmed_down       — not api_ok       AND consecutive_failures >= API_FAIL_THRESHOLD
-  ssh_confirmed_down       — not ssh_ok       AND ssh_failures >= SSH_FAIL_THRESHOLD
+  internet_confirmed_down  — not internet_ok AND consecutive_failures >= INTERNET_FAIL_THRESHOLD
+  api_confirmed_down       — not api_ok      AND consecutive_failures >= API_FAIL_THRESHOLD
+  ssh_confirmed_down       — not ssh_ok      AND ssh_failures         >= SSH_FAIL_THRESHOLD
 
 Recovery action decision tree (first matching branch wins)
 ----------------------------------------------------------
   internet confirmed down
       → alert only; no SSH or power-cycle action can succeed
 
-  tailscale confirmed down, LAN SSH still reachable
-      → at ≥ 5 failures: reboot via LAN SSH
-        (Docker restart/rebuild skipped — API unreachable via Tailscale anyway)
-
   SSH confirmed down, internet up
       → at ≥ 5 failures: Shelly power cycle (only remaining option)
 
-  API confirmed down (internet + Tailscale + SSH all up)
+  API confirmed down (internet + SSH up)
       → at ≥  5 failures: Docker restart via LAN SSH
       → at ≥  7 failures: Docker rebuild via LAN SSH
       → at ≥ 10 failures: Pi reboot via LAN SSH
       → at ≥ 15 failures: Shelly power cycle
 
 All recovery actions are gated by RECOVERY_COOLDOWN_SECONDS between attempts.
-SSH actions use the LAN IP (TRAVELNET_LAN_HOST), not Tailscale, so they remain
-reachable even when Tailscale is degraded.
+SSH actions use the LAN IP (TRAVELNET_LAN_HOST) exclusively.
+
+Tailscale is no longer load-bearing anywhere in this ladder. travelnet_healthy is
+now `lan_ok AND api_ok` (check_lan_ping() pinging TRAVELNET_LAN_HOST), not
+`tailscale_ok AND api_ok`. check_tailscale_ping() and check_cloudflare() still run
+every cycle and are still alerted on independently, but neither feeds
+travelnet_healthy or triggers any recovery action — they're monitor-only signals
+now (per explicit decision: Cloudflare stays notification-only, not folded into
+the health boolean or the recovery ladder).
 
 Recovery confirmation
 ---------------------
@@ -64,6 +66,7 @@ import requests
 
 from checks import (
     check_internet,
+    check_lan_ping,
     check_tailscale_ping,
     check_api,
     check_shelly,
@@ -87,7 +90,6 @@ from config import (
     PREFECT_ALERT_THRESHOLD,
     MIRROR_INTERVAL_CYCLES,
     INTERNET_FAIL_THRESHOLD,
-    TAILSCALE_FAIL_THRESHOLD,
     API_FAIL_THRESHOLD,
     SSH_FAIL_THRESHOLD,
 )
@@ -191,27 +193,29 @@ def run():
 
         # --- Run all checks ---
         internet_ok, internet_detail = check_internet()
-        tailscale_ok, tailscale_detail = check_tailscale_ping()
+        lan_ok, lan_detail = check_lan_ping()
+        tailscale_ok, tailscale_detail = check_tailscale_ping()  # monitor-only, see module docstring
         api_ok, api_detail = check_api()
         shelly_ok, shelly_detail = check_shelly()
-        cloudflare_ok, cloudflare_detail = check_cloudflare()
+        cloudflare_ok, cloudflare_detail = check_cloudflare()  # monitor-only, see module docstring
         ssh_tailscale_ok, ssh_lan_ok, ssh_detail = check_ssh()
         ssh_ok = ssh_tailscale_ok or ssh_lan_ok
 
-        # Prefect checks — only if Tailscale is up
-        if tailscale_ok:
+        # Prefect checks — only if the Pi is reachable on the LAN
+        if lan_ok:
             prefect_server_ok, prefect_server_detail = check_prefect_server()
             prefect_serve_ok, prefect_serve_detail = check_prefect_serve()
             prefect_flow_ok, prefect_flow_detail = check_prefect_recent_flow()
         else:
             prefect_server_ok = prefect_serve_ok = prefect_flow_ok = False
-            prefect_server_detail = prefect_serve_detail = prefect_flow_detail = "tailscale down"
+            prefect_server_detail = prefect_serve_detail = prefect_flow_detail = "LAN down"
 
         prefect_healthy = prefect_server_ok and prefect_serve_ok and prefect_flow_ok
-        travelnet_healthy = tailscale_ok and api_ok
+        travelnet_healthy = lan_ok and api_ok
 
         log.info(
             f"internet={internet_ok}({internet_detail}) "
+            f"lan={lan_ok}({lan_detail}) "
             f"tailscale={tailscale_ok}({tailscale_detail}) "
             f"api={api_ok}({api_detail}) "
             f"shelly={shelly_ok}({shelly_detail}) "
@@ -227,7 +231,7 @@ def run():
                     notify("✅ Prefect", "Prefect scheduler is healthy again.")
                     notified_prefect = False
             prefect_failures = 0
-        elif tailscale_ok:
+        elif lan_ok:
             prefect_failures += 1
             log.warning(
                 f"Prefect unhealthy — failures: {prefect_failures} | "
@@ -335,7 +339,7 @@ def run():
                 log.info(
                     f"Maintenance mode active — suppressing recovery. "
                     f"consecutive_failures={consecutive_failures} "
-                    f"internet={internet_ok} tailscale={tailscale_ok} api={api_ok}"
+                    f"internet={internet_ok} lan={lan_ok} api={api_ok}"
                 )
                 if not notified_maintenance:
                     _push_maintenance_to_pico(True)
@@ -353,22 +357,12 @@ def run():
                     notified_watchdog = True
 
                 if cooldown_elapsed:
-                    internet_confirmed_down  = not internet_ok  and consecutive_failures >= INTERNET_FAIL_THRESHOLD
-                    tailscale_confirmed_down = not tailscale_ok and consecutive_failures >= TAILSCALE_FAIL_THRESHOLD
-                    api_confirmed_down       = not api_ok       and consecutive_failures >= API_FAIL_THRESHOLD
-                    ssh_confirmed_down       = not ssh_ok       and ssh_failures         >= SSH_FAIL_THRESHOLD
+                    internet_confirmed_down = not internet_ok and consecutive_failures >= INTERNET_FAIL_THRESHOLD
+                    api_confirmed_down      = not api_ok      and consecutive_failures >= API_FAIL_THRESHOLD
+                    ssh_confirmed_down      = not ssh_ok      and ssh_failures         >= SSH_FAIL_THRESHOLD
 
                     if internet_confirmed_down:
                         log.warning("Internet confirmed down — skipping recovery actions.")
-
-                    elif tailscale_confirmed_down and not ssh_confirmed_down:
-                        if consecutive_failures >= 5:
-                            log.warning("Tailscale confirmed down, LAN SSH reachable — rebooting.")
-                            _push_to_pico("reboot", "Tailscale down — rebooting via LAN SSH")
-                            notify("🔄 Watchdog", "Tailscale confirmed down. Rebooting via LAN SSH.")
-                            ok, detail = ssh_reboot_travelnet()
-                            log.info(f"Reboot: {ok} — {detail}")
-                            last_recovery_at = now
 
                     elif ssh_confirmed_down and not internet_confirmed_down:
                         if consecutive_failures >= 5:
@@ -425,6 +419,7 @@ def run():
             shelly_failures=shelly_failures,
             last_recovery_at=last_recovery_at,
             internet_ok=internet_ok,
+            lan_ok=lan_ok,
             tailscale_ok=tailscale_ok,
             api_ok=api_ok,
             shelly_ok=shelly_ok,
@@ -436,6 +431,7 @@ def run():
             ssh_lan_ok=ssh_lan_ok,
             last_check_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             internet_detail=internet_detail,
+            lan_detail=lan_detail,
             tailscale_detail=tailscale_detail,
             api_detail=api_detail,
             shelly_detail=shelly_detail,

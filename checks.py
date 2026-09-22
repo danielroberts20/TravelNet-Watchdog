@@ -17,7 +17,7 @@ from config import (
     TRAVELNET_API_TOKEN,
     TRAVELNET_TAILSCALE_HOST,
     TRAVELNET_LAN_HOST,
-    TRAVELNET_API_URL_TAILSCALE,
+    TRAVELNET_API_URL_LAN,
     PREFECT_API_URL,
     TRAVELNET_SSH_USER,
     PREFECT_WORKER_CONTAINER,
@@ -77,15 +77,27 @@ def _do_tailscale_ping() -> tuple[bool, str]:
     ok = result.returncode == 0
     return ok, "ok" if ok else f"no ping response from {TRAVELNET_TAILSCALE_HOST}"
 
+def check_lan_ping() -> tuple[bool, str]:
+    """Ping the TravelNet Pi's LAN IP to confirm it is reachable. This is the
+    primary reachability signal feeding travelnet_healthy — check_tailscale_ping()
+    is now monitor-only and no longer load-bearing for the recovery ladder."""
+    result = subprocess.run(
+        ["ping", "-c", "2", "-W", "3", TRAVELNET_LAN_HOST],
+        capture_output=True,
+    )
+    ok = result.returncode == 0
+    return ok, "ok" if ok else f"no ping response from {TRAVELNET_LAN_HOST}"
+
+
 def check_api() -> tuple[bool, str]:
-    """Hit the TravelNet API health endpoint via the Tailnet name and port \
-    (travelnet:8000)"""
+    """Hit the TravelNet API health endpoint directly on the FastAPI container
+    over the LAN (port 8000, plain HTTP — no nginx/TLS in front, so there is
+    no certificate to verify for this check)."""
     try:
         resp = requests.get(
-            f"{TRAVELNET_API_URL_TAILSCALE}/metadata/watchdog",
+            f"{TRAVELNET_API_URL_LAN}/metadata/watchdog",
             headers={"Authorization": f"Bearer {TRAVELNET_API_TOKEN}"},
             timeout=10,
-            verify=CERT_PATH,
         )
         ok = resp.status_code == 200
         return ok, f"status {resp.status_code}"

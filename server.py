@@ -59,6 +59,7 @@ _state: dict = {
     "prefect_failures": 0,
     "last_recovery_at": 0.0,
     "internet_ok": None,
+    "lan_ok": None,
     "tailscale_ok": None,
     "api_ok": None,
     "shelly_ok": None,
@@ -68,6 +69,7 @@ _state: dict = {
     "ssh_lan_ok": None,
     "last_check_at": None,
     "internet_detail": "",
+    "lan_detail": "",
     "tailscale_detail": "",
     "api_detail": "",
     "shelly_detail": "",
@@ -305,6 +307,7 @@ function statusRefresh(){
 function renderChecks(d){
   var checks = [
     {label:'Internet',        ok:d.internet_ok,      det:d.internet_detail||''},
+    {label:'LAN',             ok:d.lan_ok,           det:d.lan_detail||''},
     {label:'Tailscale',       ok:d.tailscale_ok,     det:d.tailscale_detail||''},
     {label:'API',             ok:d.api_ok,           det:d.api_detail||''},
     {label:'Shelly',          ok:d.shelly_ok,        det:d.shelly_detail||''},
@@ -533,6 +536,7 @@ class Handler(BaseHTTPRequestHandler):
                 snap = _get_status_snapshot()
                 snap["checks"] = {
                     "internet":   {"ok": snap.get("internet_ok"),    "detail": snap.get("internet_detail", "")},
+                    "lan":        {"ok": snap.get("lan_ok"),          "detail": snap.get("lan_detail", "")},
                     "tailscale":  {"ok": snap.get("tailscale_ok"),   "detail": snap.get("tailscale_detail", "")},
                     "api":        {"ok": snap.get("api_ok"),          "detail": snap.get("api_detail", "")},
                     "shelly":     {"ok": snap.get("shelly_ok"),       "detail": snap.get("shelly_detail", "")},
