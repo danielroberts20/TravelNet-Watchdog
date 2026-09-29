@@ -3,7 +3,7 @@ Minimal HTTP server exposing watchdog status endpoints.
 Runs in a background thread alongside the main monitoring loop.
 """
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import os
@@ -503,6 +503,11 @@ fetchLogs();
 
 
 class Handler(BaseHTTPRequestHandler):
+    # Without this, a single stalled/slow client blocks the request-reading
+    # step forever; combined with a single-threaded server that wedges every
+    # later connection behind it until the OS backlog fills and everyone times out.
+    timeout = 10
+
     def _json_response(self, code: int, data: dict):
         body = json.dumps(data).encode("utf-8")
         self.send_response(code)
@@ -651,7 +656,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def start_server():
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
